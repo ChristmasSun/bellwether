@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+env/
+
+# Build outputs
+web/.next/
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Database (generated at runtime)
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+Thumbs.db
+
+# Next.js
+out/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Python
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# archived
+archived/
