@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Bellwether — U.S. Congressional Elections Dashboard",
-  description: "Bloomberg Terminal-style U.S. Senate & House Elections tracker — 2026 Cycle",
+  description: "Bloomberg Terminal-style U.S. Senate & House Elections tracker — 2026 cycle",
 };
 
 export default function RootLayout({

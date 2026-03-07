@@ -1,132 +1,125 @@
 "use client";
-import { type SenateRace, type Lean } from "@/lib/electionData";
+import { type SenateRace } from "@/lib/electionData";
 
-const LEAN_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  "Safe D":    { bg: "#0d1f3c", text: "#3b82f6", border: "#1d3a6b" },
-  "Likely D":  { bg: "#0a1a30", text: "#60a5fa", border: "#1e3a5f" },
-  "Lean D":    { bg: "#071422", text: "#93c5fd", border: "#1a3050" },
-  "Toss-Up":   { bg: "#1a1a00", text: "#fbbf24", border: "#3a3a00" },
-  "Lean R":    { bg: "#1f0a0a", text: "#fca5a5", border: "#5f1a1a" },
-  "Likely R":  { bg: "#2a0a0a", text: "#f87171", border: "#7f1d1d" },
-  "Safe R":    { bg: "#3a0a0a", text: "#ef4444", border: "#991b1b" },
+const LEAN_STYLES: Record<string, { text: string; bg: string; border: string }> = {
+  "Safe D":   { text: "#4a90d9", bg: "#0d1f3c", border: "#1d3a6b" },
+  "Likely D": { text: "#60a5fa", bg: "#0a1a2e", border: "#1a3258" },
+  "Lean D":   { text: "#93c5fd", bg: "#071422", border: "#152840" },
+  "Toss-Up":  { text: "#d4a843", bg: "#1a1400", border: "#3a2f00" },
+  "Lean R":   { text: "#fca5a5", bg: "#1f0808", border: "#5f1818" },
+  "Likely R": { text: "#f87171", bg: "#280808", border: "#7f1d1d" },
+  "Safe R":   { text: "#d95a5a", bg: "#380808", border: "#991b1b" },
 };
 
-function LeanBadge({ lean }: { lean: Lean }) {
-  const c = LEAN_COLORS[lean] ?? LEAN_COLORS["Toss-Up"];
-  return (
-    <span
-      className="font-mono text-[8px] px-1.5 py-0.5 rounded-sm font-bold tracking-wider"
-      style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}
-    >
-      {lean.toUpperCase()}
-    </span>
-  );
-}
-
-function MarginBar({ dem, rep }: { dem: number; rep: number }) {
-  const total = dem + rep;
-  const demW = total > 0 ? (dem / total) * 100 : 50;
-  return (
-    <div className="flex h-1.5 w-full overflow-hidden rounded-sm">
-      <div
-        className="h-full"
-        style={{ width: `${demW}%`, background: "linear-gradient(90deg, #1d4ed8, #3b82f6)" }}
-      />
-      <div
-        className="h-full"
-        style={{ width: `${100 - demW}%`, background: "linear-gradient(90deg, #ef4444, #b91c1c)" }}
-      />
-    </div>
-  );
-}
-
-interface Props {
-  races: SenateRace[];
-  onSelect: (race: SenateRace) => void;
-}
-
-export function SenateRacesList({ races, onSelect }: Props) {
+export function SenateRacesList({ races, onSelect }: { races: SenateRace[]; onSelect: (r: SenateRace) => void }) {
   const sorted = [...races].sort((a, b) => {
-    const order: Lean[] = ["Toss-Up", "Lean D", "Lean R", "Likely D", "Likely R", "Safe D", "Safe R"];
+    const order = ["Toss-Up", "Lean R", "Lean D", "Likely R", "Likely D", "Safe R", "Safe D"];
     return order.indexOf(a.lean) - order.indexOf(b.lean);
   });
 
   if (sorted.length === 0) {
     return (
-      <div className="px-4 py-8 text-center text-[#445544] font-mono text-[10px]">
+      <div className="px-4 py-8 text-center text-[#3d4a5c] font-mono text-[10px]">
         No Senate race data loaded yet.
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-0">
-      <div className="grid grid-cols-[80px_1fr_1fr_90px_60px_50px] gap-2 px-3 py-1.5 text-[#334433] font-mono text-[8px] tracking-widest border-b border-[#1a2a1a]">
-        <span>STATE</span>
-        <span>DEM</span>
-        <span>REP</span>
-        <span>RATING</span>
+    <div className="flex flex-col">
+      {/* Column headers */}
+      <div className="grid grid-cols-[1.4fr_1fr_1fr_64px_56px_56px_48px] gap-1 px-4 py-1.5 text-[#2a3447] font-mono text-[7px] tracking-widest border-b border-[#1c2333] bg-[#080c12] sticky top-0 z-10">
+        <span>STATE / RACE</span>
+        <span>DEMOCRAT</span>
+        <span>REPUBLICAN</span>
         <span className="text-right">MARGIN</span>
-        <span className="text-right">POLLS</span>
+        <span className="text-right">D $</span>
+        <span className="text-right">R $</span>
+        <span className="text-right">LEAN</span>
       </div>
 
-      {sorted.map((race) => {
-        const marginSign = race.margin > 0 ? "+" : "";
-        const marginColor = race.margin > 0 ? "#3b82f6" : race.margin < 0 ? "#ef4444" : "#fbbf24";
-
+      {sorted.map((race, i) => {
+        const ls = LEAN_STYLES[race.lean];
+        const margin = race.margin;
+        const isKey = race.key;
         return (
-          <button
-            key={race.stateCode}
+          <div
+            key={i}
             onClick={() => onSelect(race)}
-            className="group grid grid-cols-[80px_1fr_1fr_90px_60px_50px] gap-2 px-3 py-2 border-b border-[#0d1a0d] hover:bg-[#0a150a] transition-colors text-left w-full"
+            className="grid grid-cols-[1.4fr_1fr_1fr_64px_56px_56px_48px] gap-1 px-4 py-2.5 border-b border-[#0f1520] hover:bg-[#0d1117] cursor-pointer transition-colors group"
+            style={{ borderLeft: isKey ? "2px solid #d4a843" : "2px solid transparent" }}
           >
-            <div className="flex items-center gap-1.5">
-              <span className="text-[#00ff41] font-mono text-[11px] font-bold group-hover:glow-text">
-                {race.stateCode}
-              </span>
-              {race.key && (
-                <span className="w-1 h-1 rounded-full bg-[#fbbf24] pulse-green" />
-              )}
-            </div>
-
-            <div className="flex flex-col justify-center">
-              <div className="text-[#60a5fa] font-mono text-[9px] truncate">{race.demCandidate}</div>
-              <div className="text-[#3b82f6] font-mono text-[10px] font-bold">
-                {race.demPct > 0 ? `${race.demPct}%` : "--"}
-              </div>
-            </div>
-
-            <div className="flex flex-col justify-center">
-              <div className="text-[#fca5a5] font-mono text-[9px] truncate">{race.repCandidate}</div>
-              <div className="text-[#ef4444] font-mono text-[10px] font-bold">
-                {race.repPct > 0 ? `${race.repPct}%` : "--"}
-              </div>
-            </div>
-
-            <div className="flex flex-col justify-center gap-1">
-              <LeanBadge lean={race.lean} />
-              {race.demPct > 0 && race.repPct > 0 && (
-                <MarginBar dem={race.demPct} rep={race.repPct} />
-              )}
-            </div>
-
-            <div className="flex items-center justify-end">
-              {race.demPct > 0 || race.repPct > 0 ? (
-                <span
-                  className="font-mono text-[11px] font-bold"
-                  style={{ color: marginColor }}
-                >
-                  {marginSign}{race.margin.toFixed(1)}
+            {/* State */}
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-[9px] font-bold text-[#c9d1d9] group-hover:text-white transition-colors">
+                  {race.state}
                 </span>
-              ) : (
-                <span className="text-[#334433] font-mono text-[9px]">--</span>
-              )}
+                {race.called && (
+                  <span className="font-mono text-[6px] text-[#4ade80] tracking-widest">CALLED</span>
+                )}
+              </div>
+              <span className="font-mono text-[7px] text-[#3d4a5c]">
+                {race.incumbent === "D" ? "D INCUMBENT" : race.incumbent === "R" ? "R INCUMBENT" : "OPEN SEAT"}
+              </span>
             </div>
 
-            <div className="flex items-center justify-end">
-              <span className="text-[#445544] font-mono text-[9px]">{race.pollCount}</span>
+            {/* Dem */}
+            <div className="flex flex-col justify-center">
+              <span className="font-mono text-[8px] text-[#8b949e] truncate">{race.demCandidate.split(" ").pop()}</span>
+              <div className="flex items-center gap-1 mt-0.5">
+                <div className="w-12 h-1 bg-[#0a1a2e] rounded-sm overflow-hidden">
+                  <div className="h-full rounded-sm bg-[#4a90d9]" style={{ width: `${race.demPct}%` }} />
+                </div>
+                <span className="font-mono text-[8px] font-bold text-[#4a90d9]">{race.demPct}%</span>
+              </div>
             </div>
-          </button>
+
+            {/* Rep */}
+            <div className="flex flex-col justify-center">
+              <span className="font-mono text-[8px] text-[#8b949e] truncate">{race.repCandidate.split(" ").pop()}</span>
+              <div className="flex items-center gap-1 mt-0.5">
+                <div className="w-12 h-1 bg-[#2a0808] rounded-sm overflow-hidden">
+                  <div className="h-full rounded-sm bg-[#d95a5a]" style={{ width: `${race.repPct}%` }} />
+                </div>
+                <span className="font-mono text-[8px] font-bold text-[#d95a5a]">{race.repPct}%</span>
+              </div>
+            </div>
+
+            {/* Margin */}
+            <div className="flex items-center justify-end">
+              <span
+                className="font-mono text-[10px] font-bold"
+                style={{ color: margin > 0 ? "#4a90d9" : margin < 0 ? "#d95a5a" : "#d4a843" }}
+              >
+                {margin > 0 ? "D" : "R"}+{Math.abs(margin).toFixed(1)}
+              </span>
+            </div>
+
+            {/* D $ */}
+            <div className="flex items-center justify-end">
+              <span className="font-mono text-[8px] text-[#4a90d9]">
+                {race.moneyRaised?.dem != null ? `$${race.moneyRaised.dem}M` : "--"}
+              </span>
+            </div>
+
+            {/* R $ */}
+            <div className="flex items-center justify-end">
+              <span className="font-mono text-[8px] text-[#d95a5a]">
+                {race.moneyRaised?.rep != null ? `$${race.moneyRaised.rep}M` : "--"}
+              </span>
+            </div>
+
+            {/* Lean badge */}
+            <div className="flex items-center justify-end">
+              <span
+                className="font-mono text-[6px] font-bold px-1 py-0.5 tracking-widest whitespace-nowrap"
+                style={{ background: ls.bg, color: ls.text, border: `1px solid ${ls.border}` }}
+              >
+                {race.lean === "Toss-Up" ? "TOSS" : race.lean.replace(" ", " ").toUpperCase()}
+              </span>
+            </div>
+          </div>
         );
       })}
     </div>

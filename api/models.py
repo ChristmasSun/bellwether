@@ -27,6 +27,9 @@ class SenateRace(Base):
     cook_rating = Column(String(30))   # Safe D, Likely D, Lean D, Toss-up, etc.
     race_url_rcp = Column(String(500))  # RealClearPolling URL for this race
 
+    called = Column(Boolean, default=False)        # Has AP/networks called this race?
+    called_winner = Column(String(10))             # "DEM" or "REP" if called
+
     polls = relationship("Poll", back_populates="race")
     aggregates = relationship("PollAggregate", back_populates="race")
 

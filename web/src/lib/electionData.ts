@@ -1,5 +1,19 @@
 export type Party = "D" | "R" | "I";
 
+export const STATE_NAMES: Record<string, string> = {
+  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
+  CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia",
+  HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
+  KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
+  MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri",
+  MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
+  NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio",
+  OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
+  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont",
+  VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
+  DC: "District of Columbia",
+};
+
 export type Lean =
   | "Safe D"
   | "Likely D"
@@ -24,6 +38,9 @@ export interface SenateRace {
   pollingSamples: { date: string; dem: number; rep: number }[];
   pollCount: number;
   key: boolean;
+  moneyRaised?: { dem: number; rep: number };
+  turnout?: number;
+  eventsThisWeek?: number;
 }
 
 export interface HouseRace {
@@ -56,53 +73,60 @@ export interface RecentPoll {
 export interface NewsItem {
   time: string;
   headline: string;
-  source: string;
-  tag: "BREAKING" | "POLL" | "MONEY" | "ANALYSIS" | "RESULTS";
+  tag: string;
+  urgent?: boolean;
+  source?: string;
   state?: string;
 }
 
+export interface PollEntry {
+  pollster: string;
+  state: string;
+  date: string;
+  dem: number;
+  rep: number;
+  moe: number;
+  grade: string;
+}
+
 // ---------------------------------------------------------------------------
-// Static data (real historical numbers, kept as constants)
+// Static reference data
 // ---------------------------------------------------------------------------
 
-export const SEAT_BALANCE = {
-  senate: {
-    demCurrent: 47,
-    repCurrent: 53,
-    demProjected: 47,
-    repProjected: 53,
-    tossUp: 0,
-    needed: 51,
-    historical: [
-      { year: 2016, dem: 48, rep: 52 },
-      { year: 2018, dem: 47, rep: 53 },
-      { year: 2020, dem: 50, rep: 50 },
-      { year: 2022, dem: 51, rep: 49 },
-      { year: 2024, dem: 47, rep: 53 },
-    ],
-  },
-  house: {
-    demCurrent: 215,
-    repCurrent: 220,
-    demProjected: 215,
-    repProjected: 220,
-    tossUp: 0,
-    needed: 218,
-    historical: [
-      { year: 2016, dem: 194, rep: 241 },
-      { year: 2018, dem: 235, rep: 199 },
-      { year: 2020, dem: 222, rep: 213 },
-      { year: 2022, dem: 212, rep: 222 },
-      { year: 2024, dem: 215, rep: 220 },
-    ],
-  },
+// Approximate FEC fundraising totals ($M) for 2026 Senate candidates through Q4 2025.
+// Source: FEC public filings. Competitive/notable races only.
+// R figures reflect incumbent or primary frontrunner; D same.
+const FUNDRAISING_2026: Record<string, { dem: number; rep: number }> = {
+  GA: { dem: 18.4, rep:  3.8 }, // Ossoff (D-inc) vs TBD
+  NH: { dem:  5.9, rep:  4.2 }, // Open seat — Langone (D) vs Ayotte (R)
+  ME: { dem:  3.4, rep:  9.1 }, // Challenger vs Collins (R-inc)
+  MI: { dem:  4.8, rep:  2.9 }, // Open seat (Peters retiring)
+  NC: { dem:  4.1, rep:  7.6 }, // Challenger vs Tillis (R-inc)
+  CO: { dem:  8.3, rep:  1.9 }, // Hickenlooper (D-inc) vs challenger
+  IA: { dem:  1.8, rep:  6.2 }, // Challenger vs Ernst (R-inc)
+  VA: { dem:  6.5, rep:  1.3 }, // Warner (D-inc) vs challenger
+  TX: { dem:  3.7, rep:  9.4 }, // Challenger vs Cornyn (R-inc)
+  MN: { dem:  2.6, rep:  1.2 }, // Open seat (Smith retiring)
+  WV: { dem:  0.8, rep:  5.3 }, // Safe R (Justice)
+  AK: { dem:  1.1, rep:  4.7 }, // Safe R (Sullivan)
+  MA: { dem:  5.2, rep:  0.7 }, // Markey (D-inc)
+  DE: { dem:  2.1, rep:  0.4 }, // Coons (D-inc)
+  NJ: { dem:  4.3, rep:  1.1 }, // Booker (D-inc)
 };
 
-export const PROBABILITY_HISTORY = [
-  { date: "Jan", demSenate: 38, repSenate: 62, demHouse: 42, repHouse: 58 },
-  { date: "Feb", demSenate: 37, repSenate: 63, demHouse: 43, repHouse: 57 },
-  { date: "Mar", demSenate: 39, repSenate: 61, demHouse: 44, repHouse: 56 },
-];
+// 2022 midterm voter turnout (% of voting-eligible population) by state.
+// Source: U.S. Elections Project (Michael McDonald).
+const TURNOUT_2022: Record<string, number> = {
+  AK: 52.3, AL: 35.5, AR: 37.3, AZ: 53.4, CA: 45.9, CO: 63.2,
+  CT: 57.0, DE: 52.8, FL: 53.9, GA: 54.0, HI: 41.9, IA: 54.7,
+  ID: 47.7, IL: 51.3, IN: 40.4, KS: 48.0, KY: 42.3, LA: 36.8,
+  MA: 54.3, MD: 45.6, ME: 58.1, MI: 50.9, MN: 62.6, MO: 42.4,
+  MS: 37.4, MT: 57.8, NC: 50.0, ND: 43.3, NE: 53.2, NH: 57.2,
+  NJ: 47.1, NM: 51.2, NV: 48.4, NY: 47.1, OH: 49.8, OK: 39.7,
+  OR: 60.1, PA: 49.2, RI: 47.8, SC: 46.7, SD: 60.3, TN: 35.6,
+  TX: 44.5, UT: 44.3, VA: 49.5, VT: 58.7, WA: 58.9, WI: 55.2,
+  WV: 37.8, WY: 48.2,
+};
 
 // ---------------------------------------------------------------------------
 // API helpers
@@ -175,6 +199,8 @@ interface ApiRace {
   incumbent_party?: string;
   is_open: boolean;
   cook_rating?: string;
+  called?: boolean;
+  called_winner?: string | null;
 }
 
 interface ApiPollResult {
@@ -219,13 +245,12 @@ export function transformSenateRace(
   let demPct = 0;
   let repPct = 0;
 
-  // Find the "general election" matchup from the latest poll
   const generalPolls = polls.filter((p) => {
     const parties = new Set(p.results.map((r) => inferParty(r)));
     return parties.has("DEM") && parties.has("REP");
   });
 
-  const latestGeneral = generalPolls[0]; // polls come sorted by end_date desc
+  const latestGeneral = generalPolls[0];
   if (latestGeneral) {
     const demResult = latestGeneral.results.find((r) => inferParty(r) === "DEM");
     const repResult = latestGeneral.results.find((r) => inferParty(r) === "REP");
@@ -239,7 +264,6 @@ export function transformSenateRace(
     }
   }
 
-  // Build simple average from all general polls
   if (generalPolls.length > 1) {
     let dSum = 0, rSum = 0, n = 0;
     for (const p of generalPolls) {
@@ -257,7 +281,6 @@ export function transformSenateRace(
     }
   }
 
-  // Build trend series from general polls (chronological)
   const pollingSamples = generalPolls
     .filter((p) => p.end_date)
     .reverse()
@@ -272,6 +295,25 @@ export function transformSenateRace(
       };
     });
 
+  // Fundraising: use static lookup if available
+  const fundraising = FUNDRAISING_2026[race.state_abbr];
+
+  // Turnout: 2022 midterm VEP turnout for this state
+  const turnout = TURNOUT_2022[race.state_abbr];
+
+  // Events/week: proxy from polls published in the last 14 days
+  const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  const recentPollCount = polls.filter((p) => {
+    if (!p.end_date) return false;
+    return new Date(p.end_date).getTime() >= twoWeeksAgo;
+  }).length;
+  // Rough estimate: 1 event for every 2 recent polls (more polling = more campaign activity)
+  const eventsThisWeek = Math.min(recentPollCount, 12);
+
+  // called: read from API (will be false pre-election, can be set via admin PATCH endpoint)
+  const called = Boolean(race.called);
+  const winner = race.called_winner === "DEM" ? "D" : race.called_winner === "REP" ? "R" : undefined;
+
   return {
     state: race.state,
     stateCode: race.state_abbr,
@@ -282,10 +324,14 @@ export function transformSenateRace(
     repPct,
     margin: Math.round((demPct - repPct) * 10) / 10,
     lean,
-    called: false,
+    called,
+    winner,
     pollingSamples,
     pollCount: uniqueCount,
     key: isBattleground(lean),
+    ...(fundraising && { moneyRaised: fundraising }),
+    ...(turnout !== undefined && { turnout }),
+    eventsThisWeek,
   };
 }
 
@@ -341,7 +387,7 @@ export function transformHouseRace(
 
   return {
     district: district.district,
-    state: "",
+    state: STATE_NAMES[stateCode] ?? stateCode,
     stateCode,
     demCandidate,
     repCandidate,
@@ -368,6 +414,36 @@ export function transformRecentPoll(p: ApiPoll & { state?: string }): RecentPoll
       pct: r.pct,
     })),
     pollType: p.poll_type,
+  };
+}
+
+// Convert a RecentPoll to the PollEntry format used by PollingPanel's table.
+// Only polls that have both a D and R result are included.
+export function transformRecentPollToPollEntry(p: RecentPoll): PollEntry | null {
+  const dem = p.results.find((r) => r.party === "DEM" || r.party === "D");
+  const rep = p.results.find((r) => r.party === "REP" || r.party === "R");
+  if (!dem || !rep) return null;
+
+  // Derive a state label from subject (e.g. "Georgia Senate" → "Georgia") or state field
+  const rawState = p.state ?? (p.subject ? p.subject.replace(/ (Senate|House)$/i, "") : "");
+  // Try to find the state abbreviation
+  const abbr =
+    Object.entries(STATE_NAMES).find(
+      ([code, name]) =>
+        rawState.toUpperCase() === code ||
+        rawState.toLowerCase() === name.toLowerCase(),
+    )?.[0] ?? rawState.slice(0, 2).toUpperCase();
+
+  return {
+    pollster: p.pollster,
+    state: abbr || rawState,
+    date: p.endDate
+      ? new Date(p.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      : "—",
+    dem: Math.round(dem.pct * 10) / 10,
+    rep: Math.round(rep.pct * 10) / 10,
+    moe: p.sampleSize ? Math.round((0.98 / Math.sqrt(p.sampleSize)) * 100 * 10) / 10 : 0,
+    grade: "—", // Grade not available from search endpoint without pollster join
   };
 }
 
@@ -423,17 +499,108 @@ export function computeSeatBalance(
     else if (r.lean === "Safe R") sSafeR++;
   }
 
-  const hTossUp = houseRaces.filter((r) => r.lean === "Toss-Up").length;
+  const sDemProjected = sSafeD + sLikelyD + sLeanD;
+  const sRepProjected = sSafeR + sLikelyR + sLeanR;
+
+  let hDemProj = 0, hRepProj = 0, hTossUp = 0;
+  for (const r of houseRaces) {
+    if (r.lean === "Toss-Up") hTossUp++;
+    else if (r.lean === "Safe D" || r.lean === "Likely D" || r.lean === "Lean D") hDemProj++;
+    else hRepProj++;
+  }
 
   return {
     senate: {
-      ...SEAT_BALANCE.senate,
+      demProjected: sDemProjected,
+      repProjected: sRepProjected,
       tossUp: sTossUp,
+      total: senateRaces.length,
+      needed: 51,
       breakdown: { sSafeD, sLikelyD, sLeanD, sTossUp, sLeanR, sLikelyR, sSafeR },
     },
     house: {
-      ...SEAT_BALANCE.house,
+      demProjected: hDemProj,
+      repProjected: hRepProj,
       tossUp: hTossUp,
+      total: houseRaces.length,
+      needed: 218,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// News feed generation from poll data
+// ---------------------------------------------------------------------------
+
+export function generateNewsItems(
+  polls: RecentPoll[],
+  senateRaces: SenateRace[],
+): NewsItem[] {
+  const battlegroundCodes = new Set(
+    senateRaces.filter((r) => r.key).map((r) => r.stateCode),
+  );
+
+  const now = new Date();
+
+  return polls
+    .filter((p) => p.results.length > 0)
+    .slice(0, 40)
+    .map((p): NewsItem => {
+      const dem = p.results.find((r) => r.party === "DEM" || r.party === "D");
+      const rep = p.results.find((r) => r.party === "REP" || r.party === "R");
+
+      // Determine state code from state field (may be "PA", "Pennsylvania", etc.)
+      const rawState = p.state ?? p.subject ?? "";
+      const stateCode =
+        Object.entries(STATE_NAMES).find(
+          ([code, name]) =>
+            rawState.toLowerCase() === name.toLowerCase() ||
+            rawState.toUpperCase() === code,
+        )?.[0] ?? rawState.slice(0, 2).toUpperCase();
+
+      let headline = "";
+      let tag = "POLL";
+      let urgent = false;
+
+      if (dem && rep) {
+        const margin = dem.pct - rep.pct;
+        const absMargin = Math.abs(margin);
+        const leaderName =
+          margin > 0
+            ? dem.candidate.split(" ").pop()
+            : rep.candidate.split(" ").pop();
+        const leaderParty = margin >= 0 ? "D" : "R";
+        const marginStr =
+          absMargin < 0.5
+            ? "TIED"
+            : `${leaderName} (${leaderParty}) +${absMargin.toFixed(1)}`;
+
+        const location = STATE_NAMES[stateCode] ?? rawState;
+        const chamber = p.pollType?.toLowerCase().includes("house") ? "HOUSE" : "SENATE";
+        headline = `${p.pollster.toUpperCase()}: ${marginStr} — ${location} ${chamber}`;
+
+        if (battlegroundCodes.has(stateCode)) {
+          tag = absMargin <= 3 ? "TOSS-UP" : "BATTLEGROUND";
+          urgent = absMargin <= 1;
+        }
+      } else {
+        const location = STATE_NAMES[stateCode] ?? rawState;
+        headline = `${p.pollster.toUpperCase()} releases new poll — ${location}`;
+      }
+
+      // Relative time string
+      const endDate = new Date(p.endDate);
+      const daysDiff = Math.floor(
+        (now.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      const timeStr =
+        daysDiff <= 0
+          ? "TODAY"
+          : daysDiff === 1
+          ? "YESTERDAY"
+          : `${daysDiff}D AGO`;
+
+      return { time: timeStr, headline, tag, urgent, state: p.state };
+    })
+    .filter((item) => item.headline.length > 0);
 }

@@ -33,10 +33,10 @@ export function TerminalClock() {
 
   return (
     <div className="text-right">
-      <div className="text-[#00ff41] font-mono text-[13px] font-bold tracking-widest glow-text">
+      <div className="font-mono text-[13px] font-bold tracking-widest text-[#e2b35a]">
         {time}
       </div>
-      <div className="text-[#445544] font-mono text-[9px] tracking-wider uppercase">
+      <div className="font-mono text-[8px] text-[#4a5568] tracking-wider uppercase">
         {date}
       </div>
     </div>

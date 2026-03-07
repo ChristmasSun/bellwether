@@ -1,24 +1,81 @@
 "use client";
 import { useElectionData } from "@/lib/ElectionDataContext";
 
-function Bar({ dem, rep, total }: { dem: number; rep: number; total: number }) {
-  const demW = (dem / total) * 100;
-  const repW = (rep / total) * 100;
-  const remainW = 100 - demW - repW;
+function Chamber({
+  label, demProjected, repProjected, tossUp, majority,
+}: {
+  label: string;
+  demProjected: number;
+  repProjected: number;
+  tossUp: number;
+  majority: number;
+}) {
+  const total = demProjected + repProjected + tossUp;
+  if (total === 0) {
+    return (
+      <div className="mb-4">
+        <div className="text-[#3d4a5c] font-mono text-[7px] tracking-widest mb-1.5">{label}</div>
+        <div className="text-[#3d4a5c] font-mono text-[9px] py-4 text-center">
+          No race data available
+        </div>
+      </div>
+    );
+  }
+
+  const demPct = (demProjected / total) * 100;
+  const repPct = (repProjected / total) * 100;
+  const majPct = total > 0 ? (majority / total) * 100 : 50;
+
   return (
-    <div className="flex h-3 w-full overflow-hidden rounded-sm gap-px">
+    <div className="mb-4">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-mono text-[7px] text-[#3d4a5c] tracking-widest">{label}</span>
+        <span className="font-mono text-[7px] text-[#3d4a5c]">
+          {tossUp > 0 ? `${tossUp} TOSS-UP` : ""} · MAJ: {majority}
+        </span>
+      </div>
+
+      <div className="flex items-end justify-between mb-2">
+        <div>
+          <span className="font-mono text-[28px] font-bold text-[#4a90d9] leading-none">{demProjected}</span>
+          <span className="font-mono text-[8px] text-[#1d3a6b] ml-1">DEM</span>
+        </div>
+        <div className="text-center">
+          <div className="font-mono text-[8px] text-[#3d4a5c]">PROJ</div>
+        </div>
+        <div className="text-right">
+          <span className="font-mono text-[28px] font-bold text-[#d95a5a] leading-none">{repProjected}</span>
+          <span className="font-mono text-[8px] text-[#6b1d1d] ml-1">REP</span>
+        </div>
+      </div>
+
+      <div className="relative h-3 rounded-sm overflow-hidden bg-[#080c12] border border-[#1c2333]">
+        <div
+          className="absolute left-0 top-0 h-full"
+          style={{ width: `${demPct}%`, background: "linear-gradient(90deg, #1d4ed8, #4a90d9)" }}
+        />
+        {tossUp > 0 && (
+          <div
+            className="absolute top-0 h-full bg-[#d4a843] opacity-30"
+            style={{ left: `${demPct}%`, width: `${(tossUp / total) * 100}%` }}
+          />
+        )}
+        <div
+          className="absolute right-0 top-0 h-full"
+          style={{ width: `${repPct}%`, background: "linear-gradient(90deg, #d95a5a, #a83232)" }}
+        />
+        <div
+          className="absolute top-0 bottom-0 w-px bg-[#d4a843] z-10"
+          style={{ left: `${majPct}%` }}
+        />
+      </div>
+
       <div
-        className="h-full transition-all duration-700"
-        style={{ width: `${demW}%`, background: "linear-gradient(90deg, #1d4ed8, #3b82f6)" }}
-      />
-      <div
-        className="h-full bg-[#1a2a1a]"
-        style={{ width: `${remainW}%` }}
-      />
-      <div
-        className="h-full transition-all duration-700"
-        style={{ width: `${repW}%`, background: "linear-gradient(90deg, #ef4444, #b91c1c)" }}
-      />
+        className="font-mono text-[6px] text-[#d4a843] mt-0.5"
+        style={{ marginLeft: `${majPct}%`, transform: "translateX(-50%)" }}
+      >
+        ——{majority}——
+      </div>
     </div>
   );
 }
@@ -29,50 +86,21 @@ export function SeatMeter() {
   const h = seatBalance.house;
 
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <div className="bg-[#050d05] border border-[#1a2a1a] p-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[#00ff41] font-mono text-[9px] tracking-widest uppercase">Senate Balance</span>
-          <span className="text-[#445544] font-mono text-[8px]">Need {s.needed}</span>
-        </div>
-        <Bar dem={s.demProjected} rep={s.repProjected} total={100} />
-        <div className="flex justify-between mt-1.5">
-          <div>
-            <div className="text-[#3b82f6] font-mono text-[18px] font-bold leading-none">{s.demProjected}</div>
-            <div className="text-[#1d4ed8] font-mono text-[8px] tracking-widest">DEM PROJ</div>
-          </div>
-          <div className="text-center">
-            <div className="text-[#445544] font-mono text-[11px] font-bold">{s.tossUp}</div>
-            <div className="text-[#333] font-mono text-[7px] tracking-widest">TOSS-UP</div>
-          </div>
-          <div className="text-right">
-            <div className="text-[#ef4444] font-mono text-[18px] font-bold leading-none">{s.repProjected}</div>
-            <div className="text-[#b91c1c] font-mono text-[8px] tracking-widest">REP PROJ</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-[#050d05] border border-[#1a2a1a] p-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[#00ff41] font-mono text-[9px] tracking-widest uppercase">House Balance</span>
-          <span className="text-[#445544] font-mono text-[8px]">Need {h.needed}</span>
-        </div>
-        <Bar dem={h.demProjected} rep={h.repProjected} total={435} />
-        <div className="flex justify-between mt-1.5">
-          <div>
-            <div className="text-[#3b82f6] font-mono text-[18px] font-bold leading-none">{h.demProjected}</div>
-            <div className="text-[#1d4ed8] font-mono text-[8px] tracking-widest">DEM PROJ</div>
-          </div>
-          <div className="text-center">
-            <div className="text-[#445544] font-mono text-[11px] font-bold">{h.tossUp}</div>
-            <div className="text-[#333] font-mono text-[7px] tracking-widest">TOSS-UP</div>
-          </div>
-          <div className="text-right">
-            <div className="text-[#ef4444] font-mono text-[18px] font-bold leading-none">{h.repProjected}</div>
-            <div className="text-[#b91c1c] font-mono text-[8px] tracking-widest">REP PROJ</div>
-          </div>
-        </div>
-      </div>
+    <div>
+      <Chamber
+        label={`U.S. SENATE (${s.total} RACES TRACKED)`}
+        demProjected={s.demProjected}
+        repProjected={s.repProjected}
+        tossUp={s.tossUp}
+        majority={s.needed}
+      />
+      <Chamber
+        label={`U.S. HOUSE (${h.total} RACES TRACKED)`}
+        demProjected={h.demProjected}
+        repProjected={h.repProjected}
+        tossUp={h.tossUp}
+        majority={h.needed}
+      />
     </div>
   );
 }

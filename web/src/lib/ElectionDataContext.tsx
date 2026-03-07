@@ -11,19 +11,24 @@ import {
   type SenateRace,
   type HouseRace,
   type RecentPoll,
+  type NewsItem,
+  type PollEntry,
   apiGet,
   transformSenateRace,
   transformHouseRace,
   transformRecentPoll,
+  transformRecentPollToPollEntry,
   generateTickerItems,
+  generateNewsItems,
   computeSeatBalance,
-  SEAT_BALANCE,
 } from "./electionData";
 
 interface ElectionData {
   senateRaces: SenateRace[];
   houseRaces: HouseRace[];
   recentPolls: RecentPoll[];
+  newsItems: NewsItem[];
+  pollEntries: PollEntry[];
   tickerItems: string[];
   seatBalance: ReturnType<typeof computeSeatBalance>;
   totalSenatePolls: number;
@@ -38,10 +43,12 @@ const defaultCtx: ElectionData = {
   senateRaces: [],
   houseRaces: [],
   recentPolls: [],
-  tickerItems: ["Loading election data..."],
+  newsItems: [],
+  pollEntries: [],
+  tickerItems: ["Connecting to data feed..."],
   seatBalance: {
-    senate: { ...SEAT_BALANCE.senate, tossUp: 0, breakdown: { sSafeD: 0, sLikelyD: 0, sLeanD: 0, sTossUp: 0, sLeanR: 0, sLikelyR: 0, sSafeR: 0 } },
-    house: { ...SEAT_BALANCE.house, tossUp: 0 },
+    senate: { demProjected: 0, repProjected: 0, tossUp: 0, total: 0, needed: 51, breakdown: { sSafeD: 0, sLikelyD: 0, sLeanD: 0, sTossUp: 0, sLeanR: 0, sLikelyR: 0, sSafeR: 0 } },
+    house: { demProjected: 0, repProjected: 0, tossUp: 0, total: 0, needed: 218 },
   },
   totalSenatePolls: 0,
   totalHousePolls: 0,
@@ -64,7 +71,6 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
     setData((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
-      // Parallel initial fetches
       const [rawRaces, rawHouseDistricts, rawRecentPolls] = await Promise.all([
         apiGet<any[]>("/senate/races"),
         apiGet<any[]>("/house/races?limit=1000"),
@@ -74,7 +80,6 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
       const races: any[] = Array.isArray(rawRaces) ? rawRaces : [];
       const houseDistricts: any[] = Array.isArray(rawHouseDistricts) ? rawHouseDistricts : [];
 
-      // For each Senate race, fetch its polls in parallel (batched to avoid overwhelming the server)
       const BATCH = 8;
       const senateRaces: SenateRace[] = [];
 
@@ -101,7 +106,6 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // For House races: fetch polls for the top districts with the most polls
       const topDistricts = [...houseDistricts]
         .sort((a, b) => (b.poll_count || 0) - (a.poll_count || 0))
         .slice(0, 60);
@@ -127,7 +131,11 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
       }
 
       const recentPolls = (rawRecentPolls.polls || []).map(transformRecentPoll);
+      const pollEntries: PollEntry[] = recentPolls
+        .map(transformRecentPollToPollEntry)
+        .filter((e): e is PollEntry => e !== null);
       const tickerItems = generateTickerItems(senateRaces, houseRaces);
+      const newsItems = generateNewsItems(recentPolls, senateRaces);
       const seatBalance = computeSeatBalance(senateRaces, houseRaces);
 
       const totalSenatePolls = senateRaces.reduce((s, r) => s + r.pollCount, 0);
@@ -140,6 +148,8 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
         senateRaces,
         houseRaces,
         recentPolls,
+        newsItems,
+        pollEntries,
         tickerItems,
         seatBalance,
         totalSenatePolls,

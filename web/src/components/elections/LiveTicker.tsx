@@ -3,19 +3,18 @@ import { useElectionData } from "@/lib/ElectionDataContext";
 
 export function LiveTicker() {
   const { tickerItems } = useElectionData();
-
-  const fullText = tickerItems.join("   ///   ");
-  const doubled = fullText + "   ///   " + fullText;
+  const fullText = tickerItems.join("     ·     ");
+  const doubled = fullText + "     ·     " + fullText;
 
   return (
-    <div className="bg-[#020802] border-t border-b border-[#1a2a1a] overflow-hidden py-1.5 select-none">
-      <div className="flex items-center">
-        <div className="shrink-0 bg-[#00ff41] text-black text-[9px] font-bold px-2 py-0.5 mr-3 tracking-widest z-10">
+    <div className="bg-[#0b0f16] border-b border-[#1c2333] overflow-hidden py-1.5 select-none">
+      <div className="flex items-center gap-0">
+        <div className="shrink-0 bg-[#d4a843] text-[#080c12] text-[8px] font-bold px-2.5 py-1 mr-3 tracking-[0.2em] z-10 font-mono">
           LIVE
         </div>
         <div className="overflow-hidden flex-1">
-          <div className="ticker-track">
-            <span className="text-[#aaa] font-mono text-[10px] tracking-wide whitespace-nowrap pr-8">
+          <div className="ticker-track whitespace-nowrap inline-block">
+            <span className="text-[#4a5568] font-mono text-[9px] tracking-wide">
               {doubled}
             </span>
           </div>

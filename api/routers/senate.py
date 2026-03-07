@@ -4,6 +4,7 @@ Senate race endpoints.
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from sqlalchemy.orm import selectinload
@@ -184,6 +185,29 @@ async def get_all_aggregates(
     return out
 
 
+class CallRaceRequest(BaseModel):
+    called: bool
+    winner: Optional[str] = None  # "DEM" or "REP"
+
+
+@router.patch("/races/{state}/called")
+async def set_race_called(
+    state: str,
+    body: CallRaceRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark a Senate race as called (or un-call it). winner should be 'DEM' or 'REP'."""
+    stmt = select(SenateRace).where(SenateRace.state.ilike(state.replace("-", " ")))
+    result = await db.execute(stmt)
+    race = result.scalar_one_or_none()
+    if not race:
+        raise HTTPException(status_code=404, detail=f"Race not found: {state}")
+    race.called = body.called
+    race.called_winner = body.winner if body.called else None
+    await db.commit()
+    return {"state": race.state, "called": race.called, "called_winner": race.called_winner}
+
+
 # --- Helpers ---
 
 def _race_summary(race: SenateRace) -> dict:
@@ -195,6 +219,8 @@ def _race_summary(race: SenateRace) -> dict:
         "incumbent_party": race.incumbent_party,
         "is_open": race.is_open,
         "cook_rating": race.cook_rating,
+        "called": bool(race.called),
+        "called_winner": race.called_winner,
     }
 
 
