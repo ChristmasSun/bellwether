@@ -287,59 +287,79 @@ async def _run_wikipedia_refresh(log_id: int, state_filter: str = None):
     states = [r["state"] for r in races]
     wiki_results = await fetch_all_wikipedia(states)
 
-    async with AsyncSessionLocal() as db:
-        log_stmt = select(RefreshLog).where(RefreshLog.id == log_id)
-        log_result = await db.execute(log_stmt)
-        log = log_result.scalar_one_or_none()
+    added = 0
+    errors = []
 
-        added = 0
-        errors = []
-
-        for state_name, polls_data in wiki_results.items():
-            try:
-                race_stmt = select(SenateRace).where(SenateRace.state == state_name)
-                race_result = await db.execute(race_stmt)
+    # Process each state: fetch existing IDs first, then bulk-insert new ones
+    for state_name, polls_data in wiki_results.items():
+        if not polls_data:
+            continue
+        try:
+            async with AsyncSessionLocal() as db:
+                # Look up the race
+                race_result = await db.execute(
+                    select(SenateRace).where(SenateRace.state == state_name)
+                )
                 race = race_result.scalar_one_or_none()
                 if not race:
                     continue
 
-                for poll_data in polls_data:
-                    ext_id = poll_data.get("external_id")
-                    existing_stmt = select(Poll).where(
-                        Poll.external_id == ext_id,
+                # Get all existing external_ids for this source in one query
+                ext_ids = [p.get("external_id") for p in polls_data if p.get("external_id")]
+                existing_result = await db.execute(
+                    select(Poll.external_id).where(
+                        Poll.external_id.in_(ext_ids),
                         Poll.source == "wikipedia",
                     )
-                    existing_result = await db.execute(existing_stmt)
-                    if not existing_result.scalar_one_or_none():
-                        db.add(Poll(
-                            race_id=race.id,
-                            source=poll_data.get("source", "wikipedia"),
-                            external_id=ext_id,
-                            pollster_name=poll_data["pollster_name"],
-                            poll_date_start=poll_data.get("poll_date_start"),
-                            poll_date_end=poll_data["poll_date_end"],
-                            sample_size=poll_data.get("sample_size"),
-                            population=poll_data.get("population", "rv"),
-                            results=poll_data["results"],
-                            poll_type=poll_data.get("poll_type", "senate-race"),
-                            subject=poll_data.get("subject"),
-                            raw_data=poll_data.get("raw_data"),
-                        ))
-                        added += 1
+                )
+                existing_ids = set(r[0] for r in existing_result.all())
 
+                # Batch insert only new polls
+                new_polls = []
+                for poll_data in polls_data:
+                    ext_id = poll_data.get("external_id")
+                    if ext_id in existing_ids:
+                        continue
+                    new_polls.append(Poll(
+                        race_id=race.id,
+                        source=poll_data.get("source", "wikipedia"),
+                        external_id=ext_id,
+                        pollster_name=poll_data["pollster_name"],
+                        poll_date_start=poll_data.get("poll_date_start"),
+                        poll_date_end=poll_data["poll_date_end"],
+                        sample_size=poll_data.get("sample_size"),
+                        population=poll_data.get("population", "rv"),
+                        results=poll_data["results"],
+                        poll_type=poll_data.get("poll_type", "senate-race"),
+                        subject=poll_data.get("subject"),
+                        raw_data=poll_data.get("raw_data"),
+                    ))
+
+                if new_polls:
+                    db.add_all(new_polls)
+                    await db.commit()
+                    added += len(new_polls)
+
+        except Exception as e:
+            errors.append(f"{state_name}: {str(e)}")
+            logger.error(f"Error storing Wikipedia polls for {state_name}: {e}")
+
+    # Update the refresh log
+    try:
+        async with AsyncSessionLocal() as db:
+            log_stmt = select(RefreshLog).where(RefreshLog.id == log_id)
+            log_result = await db.execute(log_stmt)
+            log = log_result.scalar_one_or_none()
+            if log:
+                log.completed_at = datetime.utcnow()
+                log.polls_added = added
+                log.errors = errors
+                log.success = len(errors) == 0
                 await db.commit()
-            except Exception as e:
-                errors.append(f"{state_name}: {str(e)}")
-                logger.exception(f"Error storing Wikipedia polls for {state_name}")
+    except Exception:
+        pass
 
-        if log:
-            log.completed_at = datetime.utcnow()
-            log.polls_added = added
-            log.errors = errors
-            log.success = len(errors) == 0
-            await db.commit()
-
-        logger.info(f"Wikipedia refresh complete: {added} polls added, {len(errors)} errors")
+    logger.info(f"Wikipedia refresh complete: {added} polls added, {len(errors)} errors")
 
 
 async def _run_house_refresh(log_id: int, state_filter: str = None):
@@ -352,15 +372,11 @@ async def _run_house_refresh(log_id: int, state_filter: str = None):
         states = [s for s in states if s.lower() == state_filter.lower()]
     house_results = await fetch_all_house_wikipedia(states)
 
-    async with AsyncSessionLocal() as db:
-        log_stmt = select(RefreshLog).where(RefreshLog.id == log_id)
-        log_result = await db.execute(log_stmt)
-        log = log_result.scalar_one_or_none()
-
-        added = 0
-        errors = []
-        for state_name, polls_data in house_results.items():
-            try:
+    added = 0
+    errors = []
+    for state_name, polls_data in house_results.items():
+        try:
+            async with AsyncSessionLocal() as db:
                 for poll_data in polls_data:
                     ext_id = poll_data.get("external_id")
                     existing_stmt = select(Poll).where(
@@ -387,17 +403,24 @@ async def _run_house_refresh(log_id: int, state_filter: str = None):
                     ))
                     added += 1
                 await db.commit()
-            except Exception as e:
-                errors.append(f"{state_name}: {str(e)}")
-                logger.exception(f"Error storing House polls for {state_name}")
+        except Exception as e:
+            errors.append(f"{state_name}: {str(e)}")
+            logger.error(f"Error storing House polls for {state_name}: {e}")
 
-        if log:
-            log.completed_at = datetime.utcnow()
-            log.polls_added = added
-            log.errors = errors
-            log.success = len(errors) == 0
-            await db.commit()
-        logger.info(f"House refresh complete: {added} polls added, {len(errors)} errors")
+    try:
+        async with AsyncSessionLocal() as db:
+            log_stmt = select(RefreshLog).where(RefreshLog.id == log_id)
+            log_result = await db.execute(log_stmt)
+            log = log_result.scalar_one_or_none()
+            if log:
+                log.completed_at = datetime.utcnow()
+                log.polls_added = added
+                log.errors = errors
+                log.success = len(errors) == 0
+                await db.commit()
+    except Exception:
+        pass
+    logger.info(f"House refresh complete: {added} polls added, {len(errors)} errors")
 
 
 async def _recompute_all():

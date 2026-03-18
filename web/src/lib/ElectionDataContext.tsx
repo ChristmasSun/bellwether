@@ -71,10 +71,11 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
     setData((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
-      const [rawRaces, rawHouseDistricts, rawRecentPolls] = await Promise.all([
+      const [rawRaces, rawHouseDistricts, rawRecentPolls, rawFec] = await Promise.all([
         apiGet<any[]>("/senate/races"),
         apiGet<any[]>("/house/races?limit=1000"),
         apiGet<{ polls: any[]; count: number }>("/polls/search?days=60&limit=50"),
+        apiGet<Record<string, any[]>>("/fec").catch(() => ({} as Record<string, any[]>)),
       ]);
 
       const races: any[] = Array.isArray(rawRaces) ? rawRaces : [];
@@ -82,6 +83,9 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
 
       const BATCH = 8;
       const senateRaces: SenateRace[] = [];
+
+      // FEC data keyed by state abbreviation
+      const fecData: Record<string, any[]> = rawFec ?? {};
 
       for (let i = 0; i < races.length; i += BATCH) {
         const batch = races.slice(i, i + BATCH);
@@ -95,9 +99,10 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
                 race,
                 pollData.polls || [],
                 pollData.unique_count ?? (pollData.polls || []).length,
+                fecData[race.state_abbr],
               );
             } catch {
-              return transformSenateRace(race, [], 0);
+              return transformSenateRace(race, [], 0, fecData[race.state_abbr]);
             }
           })
         );

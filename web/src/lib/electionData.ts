@@ -23,10 +23,48 @@ export type Lean =
   | "Likely R"
   | "Safe R";
 
+export interface PollSample {
+  date: string;
+  dem: number;
+  rep: number;
+  pollster?: string;
+  sampleSize?: number;
+  population?: string;
+  grade?: string | null;
+}
+
+/** Minimum polls for a matchup to appear in the switcher. */
+export const MATCHUP_MIN_POLLS = 5;
+
+/**
+ * Confirmed primary winners / nominees. When set, the matchup containing
+ * this candidate's last name will be prioritized as the default.
+ * Set to null for the party if the primary hasn't happened yet.
+ */
+export const PRIMARY_RESULTS: Record<string, { dem: string | null; rep: string | null }> = {
+  TX: { dem: "Talarico", rep: null },  // Dem primary won by Talarico; Rep runoff Cornyn vs Paxton
+  IL: { dem: "Stratton", rep: "Tracy" },
+  // Add more as primaries are called:
+  // GA: { dem: "Ossoff", rep: null },
+};
+
+export interface Matchup {
+  demCandidate: string;
+  repCandidate: string;
+  demPct: number;
+  repPct: number;
+  margin: number;
+  lean: Lean;
+  pollingSamples: PollSample[];
+  pollCount: number;
+  latestPollDate?: string;
+}
+
 export interface SenateRace {
   state: string;
   stateCode: string;
   incumbent?: Party;
+  incumbentName?: string;
   demCandidate: string;
   repCandidate: string;
   demPct: number;
@@ -35,12 +73,15 @@ export interface SenateRace {
   lean: Lean;
   winner?: Party;
   called: boolean;
-  pollingSamples: { date: string; dem: number; rep: number }[];
+  pollingSamples: PollSample[];
   pollCount: number;
   key: boolean;
   moneyRaised?: { dem: number; rep: number };
+  fecCandidates?: { name: string; party: string; receipts: number }[];
   turnout?: number;
   eventsThisWeek?: number;
+  latestPollDate?: string;
+  matchups: Matchup[];
 }
 
 export interface HouseRace {
@@ -56,6 +97,107 @@ export interface HouseRace {
   called: boolean;
   incumbent?: Party;
   pollCount: number;
+}
+
+// Pollster ratings from VoteHub (https://votehub.com)
+// houseEffect: positive = R bias, negative = D bias
+// pctError: average percent error
+// relError: relative error
+// herdingError: herding percentage (higher = more herding)
+// withinMOE: percentage of polls within margin of error
+export interface PollsterRating {
+  grade: string;
+  houseEffect: number; // positive = R bias, negative = D bias
+  pctError: number;
+  relError: number;
+  herdingError: number;
+  withinMOE: number;
+}
+
+export const POLLSTER_RATINGS: Record<string, PollsterRating> = {
+  "east carolina university": { grade: "A+", houseEffect: 0.56, pctError: 1.28, relError: 0.72, herdingError: 25.4, withinMOE: 96 },
+  "fabrizio-impact": { grade: "A+", houseEffect: 0.02, pctError: 1.97, relError: 0.93, herdingError: 30.1, withinMOE: 100 },
+  "marquette law school": { grade: "A+", houseEffect: -0.27, pctError: 1.99, relError: 0.88, herdingError: 29.4, withinMOE: 90 },
+  "beacon-shaw": { grade: "A", houseEffect: -0.62, pctError: 2.58, relError: 1.31, herdingError: 30.4, withinMOE: 78 },
+  "echelon insights": { grade: "A", houseEffect: -0.57, pctError: 3.07, relError: 1.27, herdingError: 31.9, withinMOE: 84 },
+  "hart-pos": { grade: "A", houseEffect: 0.30, pctError: 2.51, relError: 1.27, herdingError: 31.5, withinMOE: 78 },
+  "insideradvantage": { grade: "A", houseEffect: 0.62, pctError: 2.74, relError: 1.39, herdingError: 13.4, withinMOE: 79 },
+  "marist": { grade: "A", houseEffect: -0.37, pctError: 2.57, relError: 1.34, herdingError: 21.4, withinMOE: 92 },
+  "research co.": { grade: "A", houseEffect: -0.18, pctError: 2.37, relError: 1.03, herdingError: 34.1, withinMOE: 87 },
+  "siena-nyt": { grade: "A", houseEffect: -0.44, pctError: 2.63, relError: 1.40, herdingError: 13.1, withinMOE: 76 },
+  "susquehanna": { grade: "A", houseEffect: 0.54, pctError: 2.75, relError: 1.30, herdingError: 24.0, withinMOE: 83 },
+  "atlasintel": { grade: "B", houseEffect: 1.30, pctError: 2.66, relError: 1.43, herdingError: 30.1, withinMOE: 73 },
+  "data for progress": { grade: "B", houseEffect: 0.04, pctError: 2.10, relError: 1.40, herdingError: 27.5, withinMOE: 70 },
+  "emerson": { grade: "B", houseEffect: 0.29, pctError: 2.81, relError: 1.47, herdingError: 31.5, withinMOE: 73 },
+  "fabrizio-gbao": { grade: "B", houseEffect: 0.31, pctError: 2.68, relError: 1.49, herdingError: 32.6, withinMOE: 78 },
+  "fabrizio-mclaughlin": { grade: "B", houseEffect: 1.27, pctError: 2.81, relError: 1.44, herdingError: 27.7, withinMOE: 72 },
+  "j.l. partners": { grade: "B", houseEffect: 1.34, pctError: 2.63, relError: 1.33, herdingError: 33.6, withinMOE: 78 },
+  "onmessage inc.": { grade: "B", houseEffect: 1.35, pctError: 2.94, relError: 1.50, herdingError: 28.7, withinMOE: 73 },
+  "quantus insights": { grade: "B", houseEffect: 0.96, pctError: 2.82, relError: 1.44, herdingError: 30.4, withinMOE: 72 },
+  "socal strategies": { grade: "B", houseEffect: 0.03, pctError: 2.77, relError: 1.41, herdingError: 29.1, withinMOE: 76 },
+  "suffolk": { grade: "B", houseEffect: 0.19, pctError: 3.20, relError: 1.50, herdingError: 11.5, withinMOE: 73 },
+  "yougov": { grade: "B", houseEffect: 0.06, pctError: 2.77, relError: 1.49, herdingError: 35.0, withinMOE: 74 },
+  "change research": { grade: "C", houseEffect: -1.31, pctError: 3.15, relError: 1.49, herdingError: 37.7, withinMOE: 69 },
+  "cnn-ssrs": { grade: "C", houseEffect: 0.11, pctError: 2.98, relError: 1.43, herdingError: 31.4, withinMOE: 69 },
+  "florida atlantic university": { grade: "C", houseEffect: 0.14, pctError: 3.14, relError: 1.66, herdingError: 30.1, withinMOE: 65 },
+  "harrisx": { grade: "C", houseEffect: -0.52, pctError: 2.76, relError: 1.62, herdingError: 51.9, withinMOE: 65 },
+  "harrisx-harris poll": { grade: "C", houseEffect: 0.97, pctError: 2.67, relError: 1.68, herdingError: 58.4, withinMOE: 67 },
+  "rmg research": { grade: "C", houseEffect: 0.41, pctError: 2.88, relError: 1.59, herdingError: 32.2, withinMOE: 67 },
+  "washington post": { grade: "C", houseEffect: 0.86, pctError: 2.84, relError: 1.47, herdingError: 32.0, withinMOE: 67 },
+  "tipp": { grade: "C", houseEffect: -0.24, pctError: 3.20, relError: 1.68, herdingError: 29.4, withinMOE: 68 },
+  "bullfinch": { grade: "D", houseEffect: -1.96, pctError: 3.56, relError: 1.76, herdingError: 31.2, withinMOE: 57 },
+  "cygnal": { grade: "D", houseEffect: 0.20, pctError: 3.25, relError: 1.65, herdingError: 29.0, withinMOE: 62 },
+  "focaldata": { grade: "D", houseEffect: -0.15, pctError: 3.01, relError: 1.93, herdingError: 43.7, withinMOE: 54 },
+  "ipsos": { grade: "D", houseEffect: -0.73, pctError: 3.08, relError: 1.89, herdingError: 37.8, withinMOE: 54 },
+  "noble predictive insights": { grade: "D", houseEffect: 0.29, pctError: 3.28, relError: 1.63, herdingError: 30.4, withinMOE: 58 },
+  "patriot polling": { grade: "D", houseEffect: 1.62, pctError: 2.81, relError: 1.84, herdingError: 33.7, withinMOE: 60 },
+  "quinnipiac": { grade: "D", houseEffect: -0.08, pctError: 3.21, relError: 1.95, herdingError: 34.6, withinMOE: 53 },
+  "redfield & wilton": { grade: "D", houseEffect: 0.28, pctError: 3.32, relError: 1.81, herdingError: 30.9, withinMOE: 65 },
+  "surveyusa": { grade: "D", houseEffect: -2.29, pctError: 4.16, relError: 1.79, herdingError: 33.7, withinMOE: 58 },
+  "trafalgar": { grade: "D", houseEffect: 1.38, pctError: 2.84, relError: 1.91, herdingError: 27.0, withinMOE: 60 },
+  "umass lowell": { grade: "D", houseEffect: -1.70, pctError: 3.63, relError: 1.77, herdingError: 34.6, withinMOE: 61 },
+};
+
+// Aliases for pollster name matching
+const POLLSTER_ALIASES: Record<string, string> = {
+  "marist college": "marist",
+  "research co": "research co.",
+  "siena college": "siena-nyt",
+  "susquehanna polling": "susquehanna",
+  "atlas intel": "atlasintel",
+  "emerson college": "emerson",
+  "jl partners": "j.l. partners",
+  "onmessage": "onmessage inc.",
+  "suffolk university": "suffolk",
+  "cnn": "cnn-ssrs",
+  "florida atlantic university-mainstreet research": "florida atlantic university",
+  "fau": "florida atlantic university",
+  "harris poll": "harrisx-harris poll",
+  "the washington post": "washington post",
+  "washington post-george mason university": "washington post",
+  "tipp insights": "tipp",
+  "bullfinch group": "bullfinch",
+  "quinnipiac university": "quinnipiac",
+  "redfield & wilton strategies": "redfield & wilton",
+  "trafalgar group": "trafalgar",
+  "university of massachusetts lowell-yougov": "umass lowell",
+};
+
+export function getPollsterRating(pollsterName: string): PollsterRating | null {
+  const name = pollsterName.toLowerCase().replace(/\s*\([^)]*\)\s*/g, "").trim();
+  // Direct match
+  if (POLLSTER_RATINGS[name]) return POLLSTER_RATINGS[name];
+  // Alias match
+  if (POLLSTER_ALIASES[name] && POLLSTER_RATINGS[POLLSTER_ALIASES[name]]) return POLLSTER_RATINGS[POLLSTER_ALIASES[name]];
+  // Substring match
+  for (const [key, rating] of Object.entries(POLLSTER_RATINGS)) {
+    if (name.includes(key) || key.includes(name)) return rating;
+  }
+  return null;
+}
+
+export function getPollsterGrade(pollsterName: string): string | null {
+  return getPollsterRating(pollsterName)?.grade ?? null;
 }
 
 export interface RecentPoll {
@@ -128,6 +270,108 @@ const TURNOUT_2022: Record<string, number> = {
   WV: 37.8, WY: 48.2,
 };
 
+// Recent statewide election results for states with 2026 Senate races.
+// Format: { label, margin (R positive), topline }
+export interface StateElectionResult {
+  label: string;
+  margin: number; // positive = R win, negative = D win
+  topline: string;
+}
+
+export const STATE_ELECTION_HISTORY: Record<string, StateElectionResult[]> = {
+  // Source: Ballotpedia verified election results
+  GA: [
+    { label: "2024 PRES", margin: 2.2, topline: "Trump 50.7 — Harris 48.5" },
+    { label: "2022 GOV", margin: 7.5, topline: "Kemp 53.4 — Abrams 45.9" },
+    { label: "2022 SEN", margin: -2.8, topline: "Walker 48.6 — Warnock 51.4" },
+    { label: "2020 PRES", margin: -0.2, topline: "Trump 49.3 — Biden 49.5" },
+  ],
+  MI: [
+    { label: "2024 PRES", margin: 1.4, topline: "Trump 49.7 — Harris 48.3" },
+    { label: "2024 SEN", margin: -0.3, topline: "Rogers 48.3 — Slotkin 48.6" },
+    { label: "2022 GOV", margin: -10.6, topline: "Dixon 43.9 — Whitmer 54.5" },
+    { label: "2020 PRES", margin: -2.8, topline: "Trump 47.8 — Biden 50.6" },
+  ],
+  MN: [
+    { label: "2024 PRES", margin: -4.2, topline: "Trump 46.7 — Harris 50.9" },
+    { label: "2024 SEN", margin: -15.7, topline: "White 40.5 — Klobuchar 56.2" },
+    { label: "2022 GOV", margin: -7.7, topline: "Jensen 44.6 — Walz 52.3" },
+    { label: "2020 PRES", margin: -7.1, topline: "Trump 45.3 — Biden 52.4" },
+  ],
+  NH: [
+    { label: "2024 PRES", margin: -2.8, topline: "Trump 47.9 — Harris 50.7" },
+    { label: "2022 SEN", margin: -9.1, topline: "Bolduc 44.4 — Hassan 53.5" },
+    { label: "2022 GOV", margin: 15.5, topline: "Sununu 57.0 — Sherman 41.5" },
+    { label: "2020 PRES", margin: -7.3, topline: "Trump 45.4 — Biden 52.7" },
+  ],
+  ME: [
+    { label: "2024 PRES", margin: -6.9, topline: "Trump 45.5 — Harris 52.4" },
+    { label: "2024 SEN", margin: -17.3, topline: "Kouzounas 34.4 — King 51.7" },
+    { label: "2022 GOV", margin: -13.3, topline: "LePage 42.4 — Mills 55.7" },
+    { label: "2020 SEN", margin: 8.6, topline: "Collins 51.0 — Gideon 42.4" },
+  ],
+  NC: [
+    { label: "2024 PRES", margin: 3.3, topline: "Trump 50.9 — Harris 47.6" },
+    { label: "2024 GOV", margin: -14.8, topline: "Robinson 40.1 — Stein 54.9" },
+    { label: "2022 SEN", margin: 3.2, topline: "Budd 50.5 — Beasley 47.3" },
+    { label: "2020 PRES", margin: 1.3, topline: "Trump 49.9 — Biden 48.6" },
+  ],
+  TX: [
+    { label: "2024 PRES", margin: 13.6, topline: "Trump 56.1 — Harris 42.5" },
+    { label: "2024 SEN", margin: 8.5, topline: "Cruz 53.1 — Allred 44.6" },
+    { label: "2022 GOV", margin: 10.9, topline: "Abbott 54.8 — O'Rourke 43.9" },
+    { label: "2020 PRES", margin: 5.6, topline: "Trump 52.1 — Biden 46.5" },
+  ],
+  IA: [
+    { label: "2024 PRES", margin: 13.2, topline: "Trump 55.7 — Harris 42.5" },
+    { label: "2022 SEN", margin: 12.2, topline: "Grassley 56.0 — Franken 43.8" },
+    { label: "2022 GOV", margin: 18.5, topline: "Reynolds 58.0 — DeJear 39.5" },
+    { label: "2020 PRES", margin: 8.2, topline: "Trump 53.1 — Biden 44.9" },
+  ],
+  CO: [
+    { label: "2024 PRES", margin: -11.0, topline: "Trump 43.1 — Harris 54.1" },
+    { label: "2022 SEN", margin: -14.6, topline: "O'Dea 41.3 — Bennet 55.9" },
+    { label: "2022 GOV", margin: -19.3, topline: "Ganahl 39.2 — Polis 58.5" },
+    { label: "2020 PRES", margin: -13.5, topline: "Trump 41.9 — Biden 55.4" },
+  ],
+  AK: [
+    { label: "2024 PRES", margin: 13.1, topline: "Trump 54.5 — Harris 41.4" },
+    { label: "2022 GOV", margin: 26.1, topline: "Dunleavy 50.3 — Gara 24.2" },
+    { label: "2020 SEN", margin: 12.7, topline: "Sullivan 53.9 — Gross 41.2" },
+    { label: "2020 PRES", margin: 10.0, topline: "Trump 52.8 — Biden 42.8" },
+  ],
+  MA: [
+    { label: "2024 PRES", margin: -25.2, topline: "Trump 36.0 — Harris 61.2" },
+    { label: "2024 SEN", margin: -19.8, topline: "Deaton 40.0 — Warren 59.8" },
+    { label: "2022 GOV", margin: -29.1, topline: "Diehl 34.6 — Healey 63.7" },
+    { label: "2020 PRES", margin: -33.5, topline: "Trump 32.1 — Biden 65.6" },
+  ],
+  VA: [
+    { label: "2024 PRES", margin: -5.7, topline: "Trump 46.1 — Harris 51.8" },
+    { label: "2024 SEN", margin: -9.0, topline: "Cao 45.4 — Kaine 54.4" },
+    { label: "2021 GOV", margin: 2.0, topline: "Youngkin 50.6 — McAuliffe 48.6" },
+    { label: "2020 PRES", margin: -10.1, topline: "Trump 44.0 — Biden 54.1" },
+  ],
+  SC: [
+    { label: "2024 PRES", margin: 17.8, topline: "Trump 58.2 — Harris 40.4" },
+    { label: "2022 SEN", margin: 25.9, topline: "Scott 62.9 — Matthews 37.0" },
+    { label: "2022 GOV", margin: 17.3, topline: "McMaster 58.0 — Cunningham 40.7" },
+    { label: "2020 PRES", margin: 11.7, topline: "Trump 55.1 — Biden 43.4" },
+  ],
+  KY: [
+    { label: "2024 PRES", margin: 30.6, topline: "Trump 64.5 — Harris 33.9" },
+    { label: "2023 GOV", margin: -5.0, topline: "Cameron 47.5 — Beshear 52.5" },
+    { label: "2022 SEN", margin: 23.6, topline: "Paul 61.8 — Booker 38.2" },
+    { label: "2020 PRES", margin: 25.9, topline: "Trump 62.1 — Biden 36.2" },
+  ],
+  MT: [
+    { label: "2024 PRES", margin: 19.9, topline: "Trump 58.4 — Harris 38.5" },
+    { label: "2024 SEN", margin: 7.1, topline: "Sheehy 52.6 — Tester 45.5" },
+    { label: "2024 GOV", margin: 20.3, topline: "Gianforte 58.9 — Busse 38.6" },
+    { label: "2020 PRES", margin: 16.4, topline: "Trump 56.9 — Biden 40.5" },
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // API helpers
 // ---------------------------------------------------------------------------
@@ -149,9 +393,11 @@ export function inferParty(result: { candidate?: string; party?: string }): stri
   const existing = (result.party ?? "").toUpperCase();
   if (existing && existing !== "UNK") return existing;
   const c = result.candidate ?? "";
-  if (/\((?:D|DEM)\)/i.test(c) || /\bDemocrat\b/i.test(c)) return "DEM";
+  if (/\((?:D|DEM|DFL)\)/i.test(c) || /\bDemocrat\b/i.test(c)) return "DEM";
   if (/\((?:R|REP|GOP)\)/i.test(c) || /\bRepublican\b/i.test(c)) return "REP";
   if (/\((?:I|IND)\)/i.test(c) || /\bIndependent\b/i.test(c)) return "IND";
+  if (/\bgeneric\s+democrat\b/i.test(c)) return "DEM";
+  if (/\bgeneric\s+republican\b/i.test(c)) return "REP";
   return "UNK";
 }
 
@@ -161,6 +407,18 @@ function lastName(full: string): string {
   return parts[parts.length - 1] || cleaned;
 }
 
+/** Derive a rating from the polling margin (D − R). */
+export function marginToLean(margin: number): Lean {
+  if (margin > 10) return "Safe D";
+  if (margin > 6) return "Likely D";
+  if (margin > 2.5) return "Lean D";
+  if (margin >= -2.5) return "Toss-Up";
+  if (margin >= -6) return "Lean R";
+  if (margin >= -10) return "Likely R";
+  return "Safe R";
+}
+
+/** Fallback: derive lean from Cook rating string (used when no polls exist). */
 export function cookToLean(cook: string | null | undefined): Lean {
   if (!cook) return "Toss-Up";
   const lower = cook.toLowerCase().replace(/[-–]/g, " ").trim();
@@ -183,8 +441,11 @@ function partyToIncumbent(p: string | null | undefined): Party | undefined {
   return undefined;
 }
 
-function isBattleground(lean: Lean): boolean {
-  return ["Toss-Up", "Lean D", "Lean R"].includes(lean);
+/** Races within this margin (absolute value) are considered battlegrounds. */
+export const BATTLEGROUND_MARGIN_THRESHOLD = 5;
+
+function isBattleground(margin: number, hasPolls: boolean): boolean {
+  return hasPolls && Math.abs(margin) <= BATTLEGROUND_MARGIN_THRESHOLD;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,66 +498,181 @@ export function transformSenateRace(
   race: ApiRace,
   polls: ApiPoll[],
   uniqueCount: number,
+  fecCandidates?: any[],
 ): SenateRace {
-  const lean = cookToLean(race.cook_rating);
+  // lean will be set from polling margin below; Cook is fallback only
 
   let demCandidate = "TBD";
   let repCandidate = "TBD";
   let demPct = 0;
   let repPct = 0;
 
+  // Filter to polls with both a DEM and REP candidate
   const generalPolls = polls.filter((p) => {
     const parties = new Set(p.results.map((r) => inferParty(r)));
     return parties.has("DEM") && parties.has("REP");
   });
 
-  const latestGeneral = generalPolls[0];
-  if (latestGeneral) {
-    const demResult = latestGeneral.results.find((r) => inferParty(r) === "DEM");
-    const repResult = latestGeneral.results.find((r) => inferParty(r) === "REP");
-    if (demResult) {
-      demCandidate = lastName(demResult.candidate);
-      demPct = demResult.pct;
-    }
-    if (repResult) {
-      repCandidate = lastName(repResult.candidate);
-      repPct = repResult.pct;
+  // Group polls by matchup (DEM last name vs REP last name)
+  const matchupGroups: Record<string, typeof generalPolls> = {};
+  for (const p of generalPolls) {
+    const d = p.results.find((r) => inferParty(r) === "DEM");
+    const r = p.results.find((r2) => inferParty(r2) === "REP");
+    if (d && r) {
+      const key = `${lastName(d.candidate)}__${lastName(r.candidate)}`;
+      if (!matchupGroups[key]) matchupGroups[key] = [];
+      matchupGroups[key].push(p);
     }
   }
 
-  if (generalPolls.length > 1) {
-    let dSum = 0, rSum = 0, n = 0;
-    for (const p of generalPolls) {
-      const d = p.results.find((r) => inferParty(r) === "DEM");
-      const r = p.results.find((r2) => inferParty(r2) === "REP");
-      if (d && r) {
-        dSum += d.pct;
-        rSum += r.pct;
-        n++;
+  // Grade-based weight: A+=5, A=4, B=3, C=2, D=1, unrated=2
+  const gradeWeights: Record<string, number> = { "A+": 5, "A": 4, "B": 3, "C": 2, "D": 1 };
+
+  /** Half-life in days for recency decay. A poll's weight halves every this many days. */
+  const RECENCY_HALF_LIFE_DAYS = 30;
+
+  function recencyWeight(endDate: string | undefined): number {
+    if (!endDate) return 0.5;
+    const daysAgo = (Date.now() - new Date(endDate).getTime()) / (1000 * 60 * 60 * 24);
+    if (daysAgo < 0) return 1;
+    // Exponential decay: weight = 0.5 ^ (daysAgo / halfLife)
+    return Math.pow(0.5, daysAgo / RECENCY_HALF_LIFE_DAYS);
+  }
+
+  function pollWeight(pollster: string, endDate?: string): number {
+    const rating = getPollsterRating(pollster);
+    const gradeW = rating ? (gradeWeights[rating.grade] ?? 2) : 2;
+    const recencyW = recencyWeight(endDate);
+    return gradeW * recencyW;
+  }
+
+  // Build Matchup objects for all groups with enough polls
+  function buildMatchup(group: typeof generalPolls): Matchup {
+    const first = group[0];
+    const dFirst = first.results.find((r) => inferParty(r) === "DEM");
+    const rFirst = first.results.find((r2) => inferParty(r2) === "REP");
+
+    let dPct = dFirst?.pct ?? 0;
+    let rPct = rFirst?.pct ?? 0;
+
+    if (group.length > 1) {
+      // Weighted average: grade weight × recency decay × house effect adjustment
+      let dWeightedSum = 0, rWeightedSum = 0, totalWeight = 0;
+      for (const p of group) {
+        const d = p.results.find((r) => inferParty(r) === "DEM");
+        const r = p.results.find((r2) => inferParty(r2) === "REP");
+        if (d && r) {
+          const w = pollWeight(p.pollster, p.end_date);
+          const rating = getPollsterRating(p.pollster);
+          // Adjust for house effect: positive = R bias, so shift toward D
+          const houseAdj = rating?.houseEffect ?? 0;
+          dWeightedSum += (d.pct + houseAdj / 2) * w;
+          rWeightedSum += (r.pct - houseAdj / 2) * w;
+          totalWeight += w;
+        }
+      }
+      if (totalWeight > 0) {
+        dPct = Math.round((dWeightedSum / totalWeight) * 10) / 10;
+        rPct = Math.round((rWeightedSum / totalWeight) * 10) / 10;
       }
     }
-    if (n > 0) {
-      demPct = Math.round((dSum / n) * 10) / 10;
-      repPct = Math.round((rSum / n) * 10) / 10;
-    }
+
+    const margin = Math.round((dPct - rPct) * 10) / 10;
+
+    const samples: PollSample[] = group
+      .filter((p) => p.end_date)
+      .reverse()
+      .map((p) => {
+        const d = p.results.find((r) => inferParty(r) === "DEM");
+        const r = p.results.find((r2) => inferParty(r2) === "REP");
+        return {
+          date: new Date(p.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          dem: d?.pct ?? 0,
+          rep: r?.pct ?? 0,
+          pollster: p.pollster,
+          sampleSize: p.sample_size,
+          population: p.population?.toUpperCase(),
+          grade: p.pollster ? getPollsterGrade(p.pollster) : null,
+        };
+      });
+
+    return {
+      demCandidate: lastName(dFirst?.candidate ?? "TBD"),
+      repCandidate: lastName(rFirst?.candidate ?? "TBD"),
+      demPct: dPct,
+      repPct: rPct,
+      margin,
+      lean: (dPct > 0 && rPct > 0) ? marginToLean(dPct - rPct) : cookToLean(race.cook_rating),
+      pollingSamples: samples,
+      pollCount: group.length,
+      latestPollDate: group[0]?.end_date
+        ? new Date(group[0].end_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        : undefined,
+    };
   }
 
-  const pollingSamples = generalPolls
-    .filter((p) => p.end_date)
-    .reverse()
-    .slice(-12)
-    .map((p) => {
-      const d = p.results.find((r) => inferParty(r) === "DEM");
-      const r = p.results.find((r2) => inferParty(r2) === "REP");
-      return {
-        date: new Date(p.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        dem: d?.pct ?? 0,
-        rep: r?.pct ?? 0,
-      };
-    });
+  // Build all matchups, sorted by poll count descending
+  const allMatchups: Matchup[] = Object.values(matchupGroups)
+    .filter((group) => group.length >= 1)
+    .map(buildMatchup)
+    .sort((a, b) => b.pollCount - a.pollCount);
 
-  // Fundraising: use static lookup if available
-  const fundraising = FUNDRAISING_2026[race.state_abbr];
+  // The "switchable" matchups are those with >= MATCHUP_MIN_POLLS
+  const switchableMatchups = allMatchups.filter((m) => m.pollCount >= MATCHUP_MIN_POLLS);
+  // If none meet the threshold, just use the best one
+  const matchups = switchableMatchups.length > 0 ? switchableMatchups : allMatchups.slice(0, 1);
+
+  // If we have confirmed primary winners, prioritize matchups containing them
+  const primaryResult = PRIMARY_RESULTS[race.state_abbr];
+  let best = matchups[0];
+  if (primaryResult && matchups.length > 1) {
+    const confirmed = matchups.find((m) => {
+      const demOk = !primaryResult.dem || m.demCandidate.toLowerCase() === primaryResult.dem.toLowerCase();
+      const repOk = !primaryResult.rep || m.repCandidate.toLowerCase() === primaryResult.rep.toLowerCase();
+      return demOk && repOk;
+    });
+    // If no exact match, at least match the confirmed side
+    const partial = !confirmed ? matchups.find((m) => {
+      if (primaryResult.dem && m.demCandidate.toLowerCase() === primaryResult.dem.toLowerCase()) return true;
+      if (primaryResult.rep && m.repCandidate.toLowerCase() === primaryResult.rep.toLowerCase()) return true;
+      return false;
+    }) : undefined;
+    best = confirmed ?? partial ?? best;
+
+    // Re-sort so the confirmed matchup is first
+    if (best !== matchups[0]) {
+      const idx = matchups.indexOf(best);
+      if (idx > 0) {
+        matchups.splice(idx, 1);
+        matchups.unshift(best);
+      }
+    }
+  }
+  if (best) {
+    demCandidate = best.demCandidate;
+    repCandidate = best.repCandidate;
+    demPct = best.demPct;
+    repPct = best.repPct;
+  }
+
+  const pollingSamples = best?.pollingSamples ?? [];
+  const latestPollDate = best?.latestPollDate;
+
+  // Fundraising: use FEC API data if available, fallback to static
+  let fundraising: { dem: number; rep: number } | undefined;
+  if (fecCandidates && fecCandidates.length > 0) {
+    const demFec = fecCandidates.filter((c: any) => c.party === "DEM").sort((a: any, b: any) => b.receipts - a.receipts)[0];
+    const repFec = fecCandidates.filter((c: any) => c.party === "REP").sort((a: any, b: any) => b.receipts - a.receipts)[0];
+    if (demFec || repFec) {
+      fundraising = {
+        dem: Math.round((demFec?.receipts ?? 0) / 1e6 * 10) / 10,
+        rep: Math.round((repFec?.receipts ?? 0) / 1e6 * 10) / 10,
+      };
+    }
+  }
+  if (!fundraising) {
+    fundraising = FUNDRAISING_2026[race.state_abbr];
+  }
 
   // Turnout: 2022 midterm VEP turnout for this state
   const turnout = TURNOUT_2022[race.state_abbr];
@@ -318,20 +694,30 @@ export function transformSenateRace(
     state: race.state,
     stateCode: race.state_abbr,
     incumbent: partyToIncumbent(race.incumbent_party),
+    incumbentName: race.incumbent ?? undefined,
     demCandidate,
     repCandidate,
     demPct,
     repPct,
     margin: Math.round((demPct - repPct) * 10) / 10,
-    lean,
+    lean: (demPct > 0 && repPct > 0) ? marginToLean(demPct - repPct) : cookToLean(race.cook_rating),
     called,
     winner,
     pollingSamples,
-    pollCount: uniqueCount,
-    key: isBattleground(lean),
+    pollCount: best?.pollCount ?? uniqueCount,
+    key: isBattleground(demPct - repPct, demPct > 0 && repPct > 0),
     ...(fundraising && { moneyRaised: fundraising }),
     ...(turnout !== undefined && { turnout }),
     eventsThisWeek,
+    latestPollDate,
+    matchups,
+    ...(fecCandidates && fecCandidates.length > 0 && {
+      fecCandidates: fecCandidates.map((c: any) => ({
+        name: c.name as string,
+        party: c.party as string,
+        receipts: c.receipts as number,
+      })),
+    }),
   };
 }
 
@@ -375,14 +761,7 @@ export function transformHouseRace(
     if (dR) demCandidate = lastName(dR.candidate);
     if (rR) repCandidate = lastName(rR.candidate);
 
-    const margin = demPct - repPct;
-    if (margin > 10) lean = "Safe D";
-    else if (margin > 5) lean = "Likely D";
-    else if (margin > 1) lean = "Lean D";
-    else if (margin < -10) lean = "Safe R";
-    else if (margin < -5) lean = "Likely R";
-    else if (margin < -1) lean = "Lean R";
-    else lean = "Toss-Up";
+    lean = marginToLean(demPct - repPct);
   }
 
   return {

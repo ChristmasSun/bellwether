@@ -20,10 +20,13 @@ build/
 .env.local
 .env.*.local
 
-# Database (generated at runtime)
+# Database & cached data (generated at runtime)
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+data/
 
 # IDE & OS
 .idea/
