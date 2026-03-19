@@ -1,14 +1,26 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { ElectionDataProvider, useElectionData } from "@/lib/ElectionDataContext";
-import { type SenateRace, type HouseRace, type Matchup, STATE_NAMES, BATTLEGROUND_MARGIN_THRESHOLD, STATE_ELECTION_HISTORY, MATCHUP_MIN_POLLS, type StateElectionResult } from "@/lib/electionData";
+import { type SenateRace, type HouseRace, type Matchup, type PrimaryMatchup, type PrimaryPollSample, STATE_NAMES, BATTLEGROUND_MARGIN_THRESHOLD, STATE_ELECTION_HISTORY, MATCHUP_MIN_POLLS, type StateElectionResult } from "@/lib/electionData";
 import { SEN_D_BASE, SEN_R_BASE, TREND_MIN_SHIFT, TREND_MIN_POLLS, TREND_WINDOW, INDEPENDENT_CANDIDATES, IND_COLOR } from "@/lib/constants";
 import { RefreshCw, ArrowLeft } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from "recharts";
 import dynamic from "next/dynamic";
 const SenateMap = dynamic(() => import("@/components/elections/USAMap").then(m => ({ default: m.SenateMap })), { ssr: false });
 
 type Tab = "SENATE" | "HOUSE";
+
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    setIsMobile(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, [breakpoint]);
+  return isMobile;
+}
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -159,9 +171,55 @@ function ErrorScreen({ error, onRetry }: { error: string; onRetry: () => void })
 // Senate Race Row (clickable)
 // ---------------------------------------------------------------------------
 
-function SenateRaceRow({ race, onClick }: { race: SenateRace; onClick: () => void }) {
+function SenateRaceRow({ race, onClick, mobile }: { race: SenateRace; onClick: () => void; mobile?: boolean }) {
   const trend = pollTrend(race);
   const baseline = presBaseline(race.stateCode);
+
+  if (mobile) {
+    return (
+      <div
+        className="flex flex-col gap-2 py-3 px-4 transition-colors"
+        style={{ borderBottom: "1px solid var(--border-subtle)", cursor: "pointer" }}
+        onClick={onClick}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: leanDot(race.lean) }} />
+            <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)" }}>{race.state}</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{race.lean}</span>
+          </div>
+          {race.demPct > 0 || race.repPct > 0 ? (
+            <span style={{
+              fontFamily: mono, fontSize: 12, fontWeight: 700, letterSpacing: "0.02em",
+              color: "#fff",
+              background: race.margin > 0 ? "var(--dem)" : race.margin < 0 ? "var(--rep)" : "var(--tossup-text)",
+              padding: "3px 8px", borderRadius: 4,
+            }}>
+              {marginLabel(race.margin)}
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, color: "var(--text-faint)" }}>—</span>
+          )}
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span style={{ fontFamily: mono, fontSize: 12, color: demColor(race.demCandidate) }}>
+              {race.demCandidate} {race.demPct > 0 ? `${race.demPct}%` : ""}
+            </span>
+            <span style={{ fontSize: 10, color: "var(--text-faint)" }}>vs</span>
+            <span style={{ fontFamily: mono, fontSize: 12, color: "var(--rep)" }}>
+              {race.repCandidate} {race.repPct > 0 ? `${race.repPct}%` : ""}
+            </span>
+          </div>
+          {trend && (
+            <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 500, color: trend.color }}>
+              {trend.shift > 0 ? "↑" : "↓"} {trend.label}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -235,8 +293,38 @@ function SenateRaceRow({ race, onClick }: { race: SenateRace; onClick: () => voi
 // House Race Row
 // ---------------------------------------------------------------------------
 
-function HouseRaceRow({ race }: { race: HouseRace }) {
+function HouseRaceRow({ race, mobile }: { race: HouseRace; mobile?: boolean }) {
   const margin = race.demPct - race.repPct;
+
+  if (mobile) {
+    return (
+      <div
+        className="flex flex-col gap-2 py-3 px-4"
+        style={{ borderBottom: "1px solid var(--border-subtle)" }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: leanDot(race.lean) }} />
+            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>{race.district}</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{race.lean}</span>
+          </div>
+          <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600, color: marginColor(margin) }}>
+            {race.demPct > 0 || race.repPct > 0 ? marginLabel(margin) : "—"}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span style={{ fontFamily: mono, fontSize: 12, color: "var(--dem)" }}>
+            {race.demCandidate} {race.demPct > 0 ? `${race.demPct}%` : ""}
+          </span>
+          <span style={{ fontSize: 10, color: "var(--text-faint)" }}>vs</span>
+          <span style={{ fontFamily: mono, fontSize: 12, color: "var(--rep)" }}>
+            {race.repCandidate} {race.repPct > 0 ? `${race.repPct}%` : ""}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex items-center py-3.5 px-10 transition-colors"
@@ -353,9 +441,12 @@ function AllStatesGrid({ senateRaces, tab, onSelect }: { senateRaces: SenateRace
 // Race Detail View (matches Paper design)
 // ---------------------------------------------------------------------------
 
-function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBack: () => void; lastRefresh: Date | null }) {
+function RaceDetailView({ race, onBack, lastRefresh, mobile }: { race: SenateRace; onBack: () => void; lastRefresh: Date | null; mobile?: boolean }) {
   const [matchupIdx, setMatchupIdx] = useState(0);
   const hasMultipleMatchups = race.matchups.length > 1;
+  const [primaryIdx, setPrimaryIdx] = useState(0);
+  const primaries = race.primaryMatchups ?? [];
+  const hasPrimaries = primaries.length > 0;
 
   // Active matchup data — either from the switcher or the race defaults
   const active: Matchup = race.matchups[matchupIdx] ?? {
@@ -368,7 +459,22 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
   const isBattleground = race.key;
   const demBarPct = active.demPct + active.repPct > 0 ? (active.demPct / (active.demPct + active.repPct)) * 100 : 50;
   const stateHistory = STATE_ELECTION_HISTORY[race.stateCode];
-  const chartData = active.pollingSamples.map((s) => ({ date: s.date, Dem: s.dem, Rep: s.rep }));
+  const demName = active.demCandidate || "Dem";
+  const repName = active.repCandidate || "Rep";
+  const chartData = active.pollingSamples.map((s, i, arr) => {
+    const window = arr.slice(Math.max(0, i - 2), i + 1); // rolling 3-poll average
+    const demVals = window.map((p) => p.dem);
+    const repVals = window.map((p) => p.rep);
+    const demAvg = Math.round(demVals.reduce((a, b) => a + b, 0) / demVals.length * 10) / 10;
+    const repAvg = Math.round(repVals.reduce((a, b) => a + b, 0) / repVals.length * 10) / 10;
+    return {
+      date: s.date,
+      [demName]: demAvg, [repName]: repAvg,
+      [`${demName}_raw`]: s.dem, [`${repName}_raw`]: s.rep,
+      [`${demName}_band`]: [Math.min(...demVals) - 1, Math.max(...demVals) + 1],
+      [`${repName}_band`]: [Math.min(...repVals) - 1, Math.max(...repVals) + 1],
+    };
+  });
 
   // Matchup-specific fundraising from FEC candidates
   const matchupFundraising = useMemo(() => {
@@ -395,23 +501,25 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
   }, [race.fecCandidates, race.moneyRaised, active.demCandidate, active.repCandidate]);
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ background: "var(--bg)" }}>
+    <div className={mobile ? "flex flex-col min-h-screen" : "h-screen flex flex-col overflow-hidden"} style={{ background: "var(--bg)" }}>
       {/* Header */}
-      <header className="flex items-center px-10 shrink-0" style={{ height: 56, borderBottom: "1px solid var(--border)" }}>
-        <button onClick={onBack} className="flex items-center gap-2 mr-6" style={{ color: "var(--text-muted)", fontSize: 13, background: "none", border: "none", cursor: "pointer" }}>
+      <header className="flex items-center shrink-0" style={{ height: 56, borderBottom: "1px solid var(--border)", padding: mobile ? "0 16px" : "0 40px" }}>
+        <button onClick={onBack} className="flex items-center gap-2 mr-4" style={{ color: "var(--text-muted)", fontSize: 13, background: "none", border: "none", cursor: "pointer" }}>
           <ArrowLeft size={16} /> Back
         </button>
-        <div className="flex items-baseline gap-3">
-          <span style={{ fontFamily: serif, fontSize: 28, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Bellwether</span>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>2026 Midterms</span>
-        </div>
+        {!mobile && (
+          <div className="flex items-baseline gap-3">
+            <span style={{ fontFamily: serif, fontSize: 28, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Bellwether</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>2026 Midterms</span>
+          </div>
+        )}
       </header>
 
       <div className="flex-1 overflow-y-auto">
-        <div style={{ maxWidth: 960, margin: "0 auto", padding: "40px 40px 80px" }}>
+        <div style={{ maxWidth: 960, margin: "0 auto", padding: mobile ? "24px 16px 60px" : "40px 40px 80px" }}>
           {/* Hero */}
-          <div className="flex flex-col gap-2" style={{ marginBottom: 32 }}>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2" style={{ marginBottom: mobile ? 20 : 32 }}>
+            <div className="flex items-center gap-2 flex-wrap">
               <span style={{ fontFamily: mono, fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>2026 Senate Race</span>
               <span style={{ color: "var(--text-faint)" }}>·</span>
               <span style={{ fontFamily: mono, fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>Class II</span>
@@ -420,8 +528,8 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
                 {race.incumbent ? `${race.incumbent} Incumbent` : "Open Seat"}
               </span>
             </div>
-            <div className="flex items-center gap-4">
-              <span style={{ fontFamily: serif, fontSize: 80, color: "var(--text-primary)", letterSpacing: "-0.03em", lineHeight: "80px" }}>
+            <div className="flex items-center gap-4 flex-wrap">
+              <span style={{ fontFamily: serif, fontSize: mobile ? 48 : 80, color: "var(--text-primary)", letterSpacing: "-0.03em", lineHeight: mobile ? "48px" : "80px" }}>
                 {race.state}
               </span>
               <div className="flex items-center gap-2">
@@ -439,9 +547,9 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
 
           {/* Matchup Switcher */}
           {hasMultipleMatchups && (
-            <div className="flex items-center gap-3" style={{ marginBottom: 16 }}>
+            <div className="flex items-center gap-3 flex-wrap" style={{ marginBottom: 16 }}>
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Matchup:</span>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 flex-wrap">
                 {race.matchups.map((m, i) => (
                   <button
                     key={i}
@@ -468,7 +576,18 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
           )}
 
           {/* Candidate Matchup */}
-          <div className="flex items-center justify-between" style={{ padding: "24px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+          <div className={mobile ? "flex flex-col gap-4" : "flex items-center justify-between"} style={{ padding: mobile ? "16px 0" : "24px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+            {mobile && (
+              <div className="flex items-baseline justify-center gap-3">
+                <span style={{ fontFamily: serif, fontSize: 36, color: demColor(active.demCandidate), letterSpacing: "-0.02em" }}>
+                  {active.demPct > 0 ? active.demPct.toFixed(1) : "—"}
+                </span>
+                <span style={{ fontSize: 14, color: "var(--text-faint)" }}>vs</span>
+                <span style={{ fontFamily: serif, fontSize: 36, color: "var(--rep)", letterSpacing: "-0.02em" }}>
+                  {active.repPct > 0 ? active.repPct.toFixed(1) : "—"}
+                </span>
+              </div>
+            )}
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: demColor(active.demCandidate) }} />
@@ -476,28 +595,30 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
                   {isIndependent(active.demCandidate) ? "Independent" : "Democrat"}
                 </span>
               </div>
-              <span style={{ fontFamily: serif, fontSize: 32, color: "var(--text-primary)" }}>{active.demCandidate || "TBD"}</span>
+              <span style={{ fontFamily: serif, fontSize: mobile ? 24 : 32, color: "var(--text-primary)" }}>{active.demCandidate || "TBD"}</span>
               {isIndependent(active.demCandidate) ? (
                 <span style={{ fontSize: 12, color: IND_COLOR }}>{isIndependent(active.demCandidate)!.note}</span>
               ) : race.incumbent === "D" && race.incumbentName && !race.called && race.incumbentName.toLowerCase().includes(active.demCandidate.toLowerCase()) ? (
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Incumbent U.S. Senator</span>
               ) : null}
             </div>
-            <div className="flex items-baseline gap-3">
-              <span style={{ fontFamily: serif, fontSize: 48, color: demColor(active.demCandidate), letterSpacing: "-0.02em" }}>
-                {active.demPct > 0 ? active.demPct.toFixed(1) : "—"}
-              </span>
-              <span style={{ fontSize: 16, color: "var(--text-faint)" }}>vs</span>
-              <span style={{ fontFamily: serif, fontSize: 48, color: "var(--rep)", letterSpacing: "-0.02em" }}>
-                {active.repPct > 0 ? active.repPct.toFixed(1) : "—"}
-              </span>
-            </div>
-            <div className="flex flex-col gap-1" style={{ textAlign: "right" }}>
-              <div className="flex items-center gap-2 justify-end">
+            {!mobile && (
+              <div className="flex items-baseline gap-3">
+                <span style={{ fontFamily: serif, fontSize: 48, color: demColor(active.demCandidate), letterSpacing: "-0.02em" }}>
+                  {active.demPct > 0 ? active.demPct.toFixed(1) : "—"}
+                </span>
+                <span style={{ fontSize: 16, color: "var(--text-faint)" }}>vs</span>
+                <span style={{ fontFamily: serif, fontSize: 48, color: "var(--rep)", letterSpacing: "-0.02em" }}>
+                  {active.repPct > 0 ? active.repPct.toFixed(1) : "—"}
+                </span>
+              </div>
+            )}
+            <div className="flex flex-col gap-1" style={{ textAlign: mobile ? "left" : "right" }}>
+              <div className="flex items-center gap-2" style={{ justifyContent: mobile ? "flex-start" : "flex-end" }}>
                 <span style={{ fontSize: 11, fontWeight: 500, color: "var(--rep)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>Republican</span>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--rep)" }} />
               </div>
-              <span style={{ fontFamily: serif, fontSize: 32, color: "var(--text-primary)" }}>{active.repCandidate || "TBD"}</span>
+              <span style={{ fontFamily: serif, fontSize: mobile ? 24 : 32, color: "var(--text-primary)" }}>{active.repCandidate || "TBD"}</span>
               {race.incumbent === "R" && race.incumbentName && race.incumbentName.toLowerCase().includes(active.repCandidate.toLowerCase()) && (
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Incumbent U.S. Senator</span>
               )}
@@ -530,26 +651,36 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
             <div style={{ borderTop: "1px solid var(--border)", padding: "32px 0" }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
                 <span style={{ fontFamily: serif, fontSize: 24, color: "var(--text-primary)" }}>Polling Trend</span>
-                <span style={{ fontSize: 12, color: "var(--text-faint)" }}>Last {chartData.length} polls</span>
+                <span style={{ fontSize: 12, color: "var(--text-faint)" }}>3-poll rolling avg</span>
               </div>
               <div style={{ width: "100%", height: 240, background: "#FAF9F6", borderRadius: 8, padding: "16px 0" }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#E0DDD6" />
                     <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#9A9590" }} tickLine={false} axisLine={{ stroke: "#E0DDD6" }} />
-                    <YAxis domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 11, fill: "#9A9590" }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #E0DDD6", background: "#F5F3EE" }} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="Dem" stroke="#2E5FA1" strokeWidth={2} dot={{ r: 3, fill: "#2E5FA1" }} />
-                    <Line type="monotone" dataKey="Rep" stroke="#C23B22" strokeWidth={2} dot={{ r: 3, fill: "#C23B22" }} />
-                  </LineChart>
+                    <YAxis domain={["dataMin - 4", "dataMax + 4"]} tick={{ fontSize: 11, fill: "#9A9590" }} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #E0DDD6", background: "#F5F3EE" }} formatter={(value: number | number[], name: string) => (name.endsWith("_raw") || name.endsWith("_band")) ? [null, null] : [value, name]} itemSorter={() => 0} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} payload={[
+                      { value: demName, type: "line", color: "#2E5FA1" },
+                      { value: repName, type: "line", color: "#C23B22" },
+                    ]} />
+                    {/* Confidence bands */}
+                    <Area type="monotone" dataKey={`${demName}_band`} fill="#2E5FA1" fillOpacity={0.08} stroke="none" isAnimationActive={false} legendType="none" activeDot={false} />
+                    <Area type="monotone" dataKey={`${repName}_band`} fill="#C23B22" fillOpacity={0.08} stroke="none" isAnimationActive={false} legendType="none" activeDot={false} />
+                    {/* Raw poll dots */}
+                    <Line type="monotone" dataKey={`${demName}_raw`} stroke="none" strokeWidth={0} dot={{ r: 3.5, fill: "#2E5FA1", fillOpacity: 0.2, strokeWidth: 0 }} activeDot={false} isAnimationActive={false} legendType="none" />
+                    <Line type="monotone" dataKey={`${repName}_raw`} stroke="none" strokeWidth={0} dot={{ r: 3.5, fill: "#C23B22", fillOpacity: 0.2, strokeWidth: 0 }} activeDot={false} isAnimationActive={false} legendType="none" />
+                    {/* Rolling average trend lines */}
+                    <Line type="monotone" dataKey={demName} stroke="#2E5FA1" strokeWidth={2.5} dot={false} />
+                    <Line type="monotone" dataKey={repName} stroke="#C23B22" strokeWidth={2.5} dot={false} />
+                  </ComposedChart>
                 </ResponsiveContainer>
               </div>
             </div>
           )}
 
           {/* Race Details + Fundraising side by side */}
-          <div className="flex gap-8" style={{ borderTop: "1px solid var(--border)", padding: "32px 0" }}>
+          <div className={mobile ? "flex flex-col gap-6" : "flex gap-8"} style={{ borderTop: "1px solid var(--border)", padding: mobile ? "24px 0" : "32px 0" }}>
             {/* Race Details */}
             <div style={{ flex: 1 }}>
               <span style={{ fontFamily: serif, fontSize: 24, color: "var(--text-primary)" }}>Race Details</span>
@@ -604,63 +735,102 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
 
           {/* Recent Polls Table */}
           {active.pollingSamples.length > 0 && (
-            <div style={{ borderTop: "1px solid var(--border)", padding: "32px 0" }}>
+            <div style={{ borderTop: "1px solid var(--border)", padding: mobile ? "24px 0" : "32px 0" }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 20 }}>
-                <span style={{ fontFamily: serif, fontSize: 24, color: "var(--text-primary)" }}>Recent Polls</span>
+                <span style={{ fontFamily: serif, fontSize: mobile ? 20 : 24, color: "var(--text-primary)" }}>Recent Polls</span>
                 <span style={{ fontSize: 12, color: "var(--text-faint)" }}>Sorted by date</span>
               </div>
-              {/* Table header */}
-              <div className="flex items-center" style={{ padding: "10px 0", borderBottom: "2px solid var(--border)" }}>
-                <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 50, flexShrink: 0, textAlign: "center" as const }}>Grade</span>
-                <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 190, flexShrink: 0 }}>Pollster</span>
-                <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 80, flexShrink: 0 }}>Date</span>
-                <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 70, flexShrink: 0 }}>Sample</span>
-                <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 40, flexShrink: 0 }}>Pop</span>
-                <span style={{ fontFamily: mono, fontSize: 10, color: "var(--dem)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 60, flexShrink: 0, fontWeight: 600 }}>Dem</span>
-                <span style={{ fontFamily: mono, fontSize: 10, color: "var(--rep)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 60, flexShrink: 0, fontWeight: 600 }}>Rep</span>
-                <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, marginLeft: "auto" }}>Margin</span>
-              </div>
-              {/* Poll rows */}
-              {active.pollingSamples.slice().reverse().map((sample, i) => {
-                const m = sample.dem - sample.rep;
-                const gradeColors: Record<string, string> = { "A+": "#2d8a4e", "A": "#2d8a4e", "B": "#6b8f3a", "C": "#b8860b", "D": "#c44e3f" };
-                const gradeColor = sample.grade ? (gradeColors[sample.grade[0]] ?? "var(--text-muted)") : "var(--text-faint)";
-                return (
-                  <div key={i} className="flex items-center" style={{ padding: "16px 0", borderBottom: "1px solid var(--border-subtle)" }}>
-                    <div className="flex items-center justify-center" style={{ width: 50, flexShrink: 0 }}>
-                      {sample.grade ? (
-                        <span style={{
-                          fontFamily: mono, fontSize: 11, fontWeight: 700, color: gradeColor,
-                          background: `${gradeColor}15`, padding: "2px 8px", borderRadius: 4,
-                        }}>
-                          {sample.grade}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 11, color: "var(--text-faint)" }}>—</span>
-                      )}
-                    </div>
-                    <span style={{ fontSize: 14, color: "var(--text-secondary)", width: 190, flexShrink: 0 }}>{sample.pollster || "—"}</span>
-                    <span style={{ fontFamily: mono, fontSize: 13, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{sample.date}</span>
-                    <span style={{ fontFamily: mono, fontSize: 13, color: "var(--text-muted)", width: 70, flexShrink: 0 }}>
-                      {sample.sampleSize ? sample.sampleSize.toLocaleString() : "—"}
-                    </span>
-                    <span style={{ fontFamily: mono, fontSize: 13, color: "var(--text-muted)", width: 40, flexShrink: 0 }}>
-                      {sample.population || "—"}
-                    </span>
-                    <span style={{ fontFamily: mono, fontSize: 16, fontWeight: 700, color: "var(--dem)", width: 60, flexShrink: 0 }}>{sample.dem}</span>
-                    <span style={{ fontFamily: mono, fontSize: 16, fontWeight: 700, color: "var(--rep)", width: 60, flexShrink: 0 }}>{sample.rep}</span>
-                    <span style={{ fontFamily: mono, fontSize: 15, fontWeight: 700, color: marginColor(m), marginLeft: "auto" }}>{marginLabel(m)}</span>
+              {mobile ? (
+                /* Mobile: card layout for polls */
+                <div className="flex flex-col gap-0">
+                  {active.pollingSamples.slice().reverse().map((sample, i) => {
+                    const m = sample.dem - sample.rep;
+                    const gradeColors: Record<string, string> = { "A+": "#2d8a4e", "A": "#2d8a4e", "B": "#6b8f3a", "C": "#b8860b", "D": "#c44e3f" };
+                    const gradeColor = sample.grade ? (gradeColors[sample.grade[0]] ?? "var(--text-muted)") : "var(--text-faint)";
+                    return (
+                      <div key={i} className="flex flex-col gap-1.5" style={{ padding: "12px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {sample.grade && (
+                              <span style={{
+                                fontFamily: mono, fontSize: 10, fontWeight: 700, color: gradeColor,
+                                background: `${gradeColor}15`, padding: "2px 6px", borderRadius: 3,
+                              }}>
+                                {sample.grade}
+                              </span>
+                            )}
+                            <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500 }}>{sample.pollster || "—"}</span>
+                          </div>
+                          <span style={{ fontFamily: mono, fontSize: 12, color: "var(--text-muted)" }}>{sample.date}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 700, color: "var(--dem)" }}>{sample.dem}</span>
+                            <span style={{ fontSize: 10, color: "var(--text-faint)" }}>vs</span>
+                            <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 700, color: "var(--rep)" }}>{sample.rep}</span>
+                          </div>
+                          <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: marginColor(m) }}>{marginLabel(m)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <>
+                  {/* Table header */}
+                  <div className="flex items-center" style={{ padding: "10px 0", borderBottom: "2px solid var(--border)" }}>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 50, flexShrink: 0, textAlign: "center" as const }}>Grade</span>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 190, flexShrink: 0 }}>Pollster</span>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 80, flexShrink: 0 }}>Date</span>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 70, flexShrink: 0 }}>Sample</span>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 40, flexShrink: 0 }}>Pop</span>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "var(--dem)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 60, flexShrink: 0, fontWeight: 600 }}>Dem</span>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "var(--rep)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 60, flexShrink: 0, fontWeight: 600 }}>Rep</span>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, marginLeft: "auto" }}>Margin</span>
                   </div>
-                );
-              })}
+                  {/* Poll rows */}
+                  {active.pollingSamples.slice().reverse().map((sample, i) => {
+                    const m = sample.dem - sample.rep;
+                    const gradeColors: Record<string, string> = { "A+": "#2d8a4e", "A": "#2d8a4e", "B": "#6b8f3a", "C": "#b8860b", "D": "#c44e3f" };
+                    const gradeColor = sample.grade ? (gradeColors[sample.grade[0]] ?? "var(--text-muted)") : "var(--text-faint)";
+                    return (
+                      <div key={i} className="flex items-center" style={{ padding: "16px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                        <div className="flex items-center justify-center" style={{ width: 50, flexShrink: 0 }}>
+                          {sample.grade ? (
+                            <span style={{
+                              fontFamily: mono, fontSize: 11, fontWeight: 700, color: gradeColor,
+                              background: `${gradeColor}15`, padding: "2px 8px", borderRadius: 4,
+                            }}>
+                              {sample.grade}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, color: "var(--text-faint)" }}>—</span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 14, color: "var(--text-secondary)", width: 190, flexShrink: 0 }}>{sample.pollster || "—"}</span>
+                        <span style={{ fontFamily: mono, fontSize: 13, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{sample.date}</span>
+                        <span style={{ fontFamily: mono, fontSize: 13, color: "var(--text-muted)", width: 70, flexShrink: 0 }}>
+                          {sample.sampleSize ? sample.sampleSize.toLocaleString() : "—"}
+                        </span>
+                        <span style={{ fontFamily: mono, fontSize: 13, color: "var(--text-muted)", width: 40, flexShrink: 0 }}>
+                          {sample.population || "—"}
+                        </span>
+                        <span style={{ fontFamily: mono, fontSize: 16, fontWeight: 700, color: "var(--dem)", width: 60, flexShrink: 0 }}>{sample.dem}</span>
+                        <span style={{ fontFamily: mono, fontSize: 16, fontWeight: 700, color: "var(--rep)", width: 60, flexShrink: 0 }}>{sample.rep}</span>
+                        <span style={{ fontFamily: mono, fontSize: 15, fontWeight: 700, color: marginColor(m), marginLeft: "auto" }}>{marginLabel(m)}</span>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
             </div>
           )}
 
           {/* Recent Statewide Results */}
           {stateHistory && (
-            <div style={{ borderTop: "1px solid var(--border)", padding: "32px 0" }}>
-              <span style={{ fontFamily: serif, fontSize: 24, color: "var(--text-primary)" }}>Recent Statewide Results</span>
-              <div className="flex gap-3" style={{ marginTop: 16 }}>
+            <div style={{ borderTop: "1px solid var(--border)", padding: mobile ? "24px 0" : "32px 0" }}>
+              <span style={{ fontFamily: serif, fontSize: mobile ? 20 : 24, color: "var(--text-primary)" }}>Recent Statewide Results</span>
+              <div className={mobile ? "grid grid-cols-2 gap-2" : "flex gap-3"} style={{ marginTop: 16 }}>
                 {stateHistory.map((result) => (
                   <div key={result.label} style={{ flex: 1, border: "1px solid var(--border)", borderRadius: 8, padding: 16 }}>
                     <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>{result.label}</span>
@@ -674,16 +844,234 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
             </div>
           )}
 
+          {/* Primary Polls */}
+          {hasPrimaries && (() => {
+            const pm = primaries[primaryIdx];
+            if (!pm) return null;
+            const partyColor = pm.party === "DEM" ? "var(--dem)" : "var(--rep)";
+            const partyRawColor = pm.party === "DEM" ? "#2E5FA1" : "#C23B22";
+            const partyBg = pm.party === "DEM" ? "var(--dem-bg)" : "var(--rep-bg)";
+            const partyLabel = pm.party === "DEM" ? "Democratic" : "Republican";
+
+            // Distinct colors per candidate — starts with the party color, then variations
+            const demPalette = ["#2E5FA1", "#5B8DC9", "#1A3F6F", "#7BA7D7", "#3E74B5", "#A0C4E8"];
+            const repPalette = ["#C23B22", "#D97A6A", "#8B2010", "#E4A090", "#A83520", "#D05540"];
+            const palette = pm.party === "DEM" ? demPalette : repPalette;
+            const topCandidates = pm.candidates.slice(0, 6);
+            const candidateColors: Record<string, string> = {};
+            topCandidates.forEach((c, i) => { candidateColors[c.name] = palette[i % palette.length]; });
+
+            // Build chart data: rolling 3-poll average + raw dots + bands per candidate
+            const primaryChartData = pm.pollingSamples.map((s, i, arr) => {
+              const window = arr.slice(Math.max(0, i - 2), i + 1);
+              const row: Record<string, string | number | number[]> = { date: s.date };
+              for (const cand of topCandidates) {
+                const vals = window
+                  .map((w) => w.candidates.find((c) => c.name === cand.name)?.pct)
+                  .filter((v): v is number => v != null);
+                if (vals.length > 0) {
+                  row[cand.name] = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10;
+                  row[`${cand.name}_band`] = [Math.min(...vals) - 1, Math.max(...vals) + 1];
+                }
+                const raw = s.candidates.find((c) => c.name === cand.name)?.pct;
+                if (raw != null) row[`${cand.name}_raw`] = raw;
+              }
+              return row;
+            });
+
+            return (
+              <div style={{ borderTop: "1px solid var(--border)", padding: mobile ? "24px 0" : "32px 0" }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+                  <span style={{ fontFamily: serif, fontSize: mobile ? 20 : 24, color: "var(--text-primary)" }}>Primary Polling</span>
+                  <span style={{ fontSize: 12, color: "var(--text-faint)" }}>{pm.pollCount} poll{pm.pollCount !== 1 ? "s" : ""}</span>
+                </div>
+
+                {/* Primary matchup selector */}
+                {primaries.length > 1 && (
+                  <div className="flex gap-1.5 flex-wrap" style={{ marginBottom: 16 }}>
+                    {primaries.map((p, i) => {
+                      const btnColor = p.party === "DEM" ? "var(--dem)" : "var(--rep)";
+                      const btnBg = p.party === "DEM" ? "var(--dem-bg)" : "var(--rep-bg)";
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => setPrimaryIdx(i)}
+                          style={{
+                            fontFamily: mono, fontSize: 11, fontWeight: primaryIdx === i ? 600 : 400,
+                            padding: "4px 10px", borderRadius: 5,
+                            border: primaryIdx === i ? `2px solid ${btnColor}` : "1px solid var(--border)",
+                            background: primaryIdx === i ? btnBg : "transparent",
+                            color: primaryIdx === i ? btnColor : "var(--text-secondary)",
+                            cursor: "pointer", transition: "all 0.15s",
+                          }}
+                        >
+                          {p.party === "DEM" ? "D" : "R"}: {p.label}
+                          <span style={{ marginLeft: 4, fontSize: 10, opacity: 0.7 }}>({p.pollCount})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Party badge */}
+                <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: partyColor }} />
+                  <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", color: partyColor, textTransform: "uppercase" as const }}>
+                    {partyLabel} Primary
+                  </span>
+                </div>
+
+                {/* Candidate results bar */}
+                <div className="flex flex-col gap-2" style={{ marginBottom: 24 }}>
+                  {topCandidates.map((c, i) => {
+                    const maxPct = topCandidates[0]?.pct ?? 1;
+                    const barWidth = Math.max((c.pct / maxPct) * 100, 4);
+                    return (
+                      <div key={c.name} className="flex items-center gap-3">
+                        <div className="flex items-center gap-2" style={{ width: mobile ? 80 : 100, flexShrink: 0 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: candidateColors[c.name], flexShrink: 0 }} />
+                          <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{c.name}</span>
+                        </div>
+                        <div className="flex-1" style={{ height: 20, background: "rgba(0,0,0,0.03)", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ width: `${barWidth}%`, height: "100%", background: candidateColors[c.name], borderRadius: 4, transition: "width 0.3s" }} />
+                        </div>
+                        <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600, color: candidateColors[c.name], width: 48, textAlign: "right" as const, flexShrink: 0 }}>{c.pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Polling Trend Chart */}
+                {primaryChartData.length > 1 && (
+                  <div style={{ marginBottom: 24 }}>
+                    <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+                      <span style={{ fontFamily: mono, fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>Polling Trend</span>
+                      <span style={{ fontSize: 12, color: "var(--text-faint)" }}>3-poll rolling avg</span>
+                    </div>
+                    <div style={{ width: "100%", height: 240, background: "#FAF9F6", borderRadius: 8, padding: "16px 0" }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={primaryChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#E0DDD6" />
+                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#9A9590" }} tickLine={false} axisLine={{ stroke: "#E0DDD6" }} />
+                          <YAxis domain={["dataMin - 4", "dataMax + 4"]} tick={{ fontSize: 11, fill: "#9A9590" }} tickLine={false} axisLine={false} />
+                          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #E0DDD6", background: "#F5F3EE" }} formatter={(value: number | number[], name: string) => (name.endsWith("_raw") || name.endsWith("_band")) ? [null, null] : [value, name]} itemSorter={() => 0} />
+                          <Legend wrapperStyle={{ fontSize: 12 }} payload={topCandidates.map((c) => ({ value: c.name, type: "line" as const, color: candidateColors[c.name] }))} />
+                          {/* Confidence bands */}
+                          {topCandidates.map((c) => (
+                            <Area key={`${c.name}_band`} type="monotone" dataKey={`${c.name}_band`} fill={candidateColors[c.name]} fillOpacity={0.08} stroke="none" isAnimationActive={false} legendType="none" activeDot={false} connectNulls />
+                          ))}
+                          {/* Raw poll dots */}
+                          {topCandidates.map((c) => (
+                            <Line
+                              key={`${c.name}_raw`}
+                              type="monotone"
+                              dataKey={`${c.name}_raw`}
+                              stroke="none"
+                              strokeWidth={0}
+                              dot={{ r: 3, fill: candidateColors[c.name], fillOpacity: 0.2, strokeWidth: 0 }}
+                              activeDot={false}
+                              isAnimationActive={false}
+                              legendType="none"
+                              connectNulls={false}
+                            />
+                          ))}
+                          {/* Rolling average trend lines */}
+                          {topCandidates.map((c, i) => (
+                            <Line
+                              key={c.name}
+                              type="monotone"
+                              dataKey={c.name}
+                              stroke={candidateColors[c.name]}
+                              strokeWidth={i === 0 ? 2.5 : 1.5}
+                              dot={false}
+                              connectNulls
+                            />
+                          ))}
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+
+                {/* Primary poll list */}
+                {mobile ? (
+                  <div className="flex flex-col gap-0">
+                    {pm.pollingSamples.slice().reverse().map((sample, i) => {
+                      const gradeColors: Record<string, string> = { "A+": "#2d8a4e", "A": "#2d8a4e", "B": "#6b8f3a", "C": "#b8860b", "D": "#c44e3f" };
+                      const gradeColor = sample.grade ? (gradeColors[sample.grade[0]] ?? "var(--text-muted)") : "var(--text-faint)";
+                      return (
+                        <div key={i} className="flex flex-col gap-1.5" style={{ padding: "10px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {sample.grade && (
+                                <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, color: gradeColor, background: `${gradeColor}15`, padding: "2px 6px", borderRadius: 3 }}>{sample.grade}</span>
+                              )}
+                              <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{sample.pollster || "—"}</span>
+                            </div>
+                            <span style={{ fontFamily: mono, fontSize: 11, color: "var(--text-muted)" }}>{sample.date}</span>
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            {sample.candidates.filter((c) => candidateColors[c.name] != null).map((c) => (
+                              <span key={c.name} style={{ fontFamily: mono, fontSize: 12, color: candidateColors[c.name] }}>
+                                {c.name} {c.pct}%
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <>
+                    {/* Desktop table header */}
+                    <div className="flex items-center" style={{ padding: "8px 0", borderBottom: "2px solid var(--border)" }}>
+                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 50, flexShrink: 0, textAlign: "center" as const }}>Grade</span>
+                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 180, flexShrink: 0 }}>Pollster</span>
+                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 80, flexShrink: 0 }}>Date</span>
+                      {topCandidates.map((c) => (
+                        <span key={c.name} style={{ fontFamily: mono, fontSize: 10, color: candidateColors[c.name], letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 70, flexShrink: 0, fontWeight: 600 }}>{c.name}</span>
+                      ))}
+                    </div>
+                    {pm.pollingSamples.slice().reverse().map((sample, i) => {
+                      const gradeColors: Record<string, string> = { "A+": "#2d8a4e", "A": "#2d8a4e", "B": "#6b8f3a", "C": "#b8860b", "D": "#c44e3f" };
+                      const gradeColor = sample.grade ? (gradeColors[sample.grade[0]] ?? "var(--text-muted)") : "var(--text-faint)";
+                      const byName: Record<string, number> = {};
+                      for (const c of sample.candidates) byName[c.name] = c.pct;
+                      return (
+                        <div key={i} className="flex items-center" style={{ padding: "12px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                          <div className="flex items-center justify-center" style={{ width: 50, flexShrink: 0 }}>
+                            {sample.grade ? (
+                              <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: gradeColor, background: `${gradeColor}15`, padding: "2px 8px", borderRadius: 4 }}>{sample.grade}</span>
+                            ) : (
+                              <span style={{ fontSize: 11, color: "var(--text-faint)" }}>—</span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: 13, color: "var(--text-secondary)", width: 180, flexShrink: 0 }}>{sample.pollster || "—"}</span>
+                          <span style={{ fontFamily: mono, fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{sample.date}</span>
+                          {topCandidates.map((c) => (
+                            <span key={c.name} style={{ fontFamily: mono, fontSize: 14, fontWeight: 600, color: candidateColors[c.name], width: 70, flexShrink: 0, opacity: byName[c.name] != null ? 1 : 0.3 }}>
+                              {byName[c.name] != null ? `${byName[c.name]}%` : "—"}
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Methodology + Last Updated */}
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 24, marginTop: 8 }}>
-            <div className="flex items-start justify-between">
+            <div className={mobile ? "flex flex-col gap-4" : "flex items-start justify-between"}>
               <div className="flex flex-col gap-1">
                 <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>Methodology</span>
                 <span style={{ fontSize: 12, color: "var(--text-faint)", lineHeight: "18px", maxWidth: 500 }}>
                   Polling average using general election polls from Wikipedia. Pollster grades from VoteHub. Fundraising data from FEC filings. Ratings derived from polling margin.
                 </span>
               </div>
-              <div className="flex flex-col gap-1" style={{ textAlign: "right" }}>
+              <div className="flex flex-col gap-1" style={{ textAlign: mobile ? "left" : "right" }}>
                 <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>Last Updated</span>
                 <span style={{ fontFamily: mono, fontSize: 12, color: "var(--text-faint)" }}>
                   {lastRefresh ? lastRefresh.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }) + " ET" : "—"}
@@ -714,6 +1102,7 @@ function DashboardContent() {
   type SortMode = "alpha" | "margin" | "pres24" | "polls" | "trend";
   const [sortMode, setSortMode] = useState<SortMode>("alpha");
   const [mounted, setMounted] = useState(false);
+  const mobile = useIsMobile();
 
   useEffect(() => setMounted(true), []);
 
@@ -724,7 +1113,7 @@ function DashboardContent() {
   // If a race is selected, show detail view
   const selectedRace = selectedRaceCode ? senateRaces.find((r) => r.stateCode === selectedRaceCode) : null;
   if (selectedRace) {
-    return <RaceDetailView race={selectedRace} onBack={() => setSelectedRaceCode(null)} lastRefresh={lastRefresh} />;
+    return <RaceDetailView race={selectedRace} onBack={() => setSelectedRaceCode(null)} lastRefresh={lastRefresh} mobile={mobile} />;
   }
 
   // Compute seat projections
@@ -821,14 +1210,14 @@ function DashboardContent() {
   const sortedHouse = [...houseRaces].sort((a, b) => Math.abs(a.demPct - a.repPct) - Math.abs(b.demPct - b.repPct));
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ background: "var(--bg)" }}>
+    <div className={mobile ? "flex flex-col min-h-screen" : "h-screen flex flex-col overflow-hidden"} style={{ background: "var(--bg)" }}>
       {/* Header */}
-      <header className="flex items-center px-10 shrink-0" style={{ height: 56, borderBottom: "1px solid var(--border)" }}>
-        <div className="flex items-baseline gap-3">
-          <span style={{ fontFamily: serif, fontSize: 28, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Bellwether</span>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>2026 Midterms</span>
+      <header className="flex items-center shrink-0" style={{ height: 56, borderBottom: "1px solid var(--border)", padding: mobile ? "0 16px" : "0 40px" }}>
+        <div className="flex items-baseline gap-2">
+          <span style={{ fontFamily: serif, fontSize: mobile ? 22 : 28, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Bellwether</span>
+          {!mobile && <span style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>2026 Midterms</span>}
         </div>
-        <nav className="flex items-center gap-6 ml-auto">
+        <nav className="flex items-center gap-4 ml-auto">
           {(["SENATE", "HOUSE"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)} style={{ fontSize: 13, fontWeight: tab === t ? 500 : 400, color: tab === t ? "var(--text-primary)" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", borderBottom: tab === t ? "2px solid var(--text-primary)" : "2px solid transparent", paddingBottom: 2 }}>
               {t === "SENATE" ? "Senate" : "House"}
@@ -839,9 +1228,9 @@ function DashboardContent() {
       </header>
 
       {/* Hero */}
-      <div className="flex px-10 shrink-0" style={{ borderBottom: "1px solid var(--border)", paddingTop: 24, paddingBottom: 20, gap: 32 }}>
+      <div className={mobile ? "flex flex-col" : "flex"} style={{ borderBottom: "1px solid var(--border)", paddingTop: mobile ? 16 : 24, paddingBottom: mobile ? 16 : 20, gap: mobile ? 16 : 32, paddingLeft: mobile ? 16 : 40, paddingRight: mobile ? 16 : 40 }}>
         {/* Left — Projection */}
-        <div className="flex flex-col gap-2" style={{ width: 340, flexShrink: 0 }}>
+        <div className="flex flex-col gap-2" style={mobile ? {} : { width: 340, flexShrink: 0 }}>
           <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
             {tab === "SENATE" ? "Projected Senate Balance" : "House Competitive Races"}
           </span>
@@ -849,18 +1238,17 @@ function DashboardContent() {
             <>
               <div className="flex items-baseline gap-3">
                 <div className="flex items-baseline gap-1">
-                  <span style={{ fontFamily: serif, fontSize: 52, color: "var(--dem)", letterSpacing: "-0.03em", lineHeight: "52px" }}>{senDTotal}</span>
+                  <span style={{ fontFamily: serif, fontSize: mobile ? 40 : 52, color: "var(--dem)", letterSpacing: "-0.03em", lineHeight: mobile ? "40px" : "52px" }}>{senDTotal}</span>
                   <span style={{ fontSize: 13, color: "var(--dem)" }}>Dem</span>
                 </div>
                 <span style={{ fontSize: 13, color: "var(--text-faint)" }}>—</span>
                 <div className="flex items-baseline gap-1">
-                  <span style={{ fontFamily: serif, fontSize: 52, color: "var(--rep)", letterSpacing: "-0.03em", lineHeight: "52px" }}>{senRTotal}</span>
+                  <span style={{ fontFamily: serif, fontSize: mobile ? 40 : 52, color: "var(--rep)", letterSpacing: "-0.03em", lineHeight: mobile ? "40px" : "52px" }}>{senRTotal}</span>
                   <span style={{ fontSize: 13, color: "var(--rep)" }}>Rep</span>
                 </div>
               </div>
               {/* Projection bar */}
               {(() => {
-                // sDem/sRep already include toss-ups assigned by margin
                 const total = senDTotal + senRTotal;
                 return (
                   <div className="flex flex-col gap-1">
@@ -893,12 +1281,12 @@ function DashboardContent() {
             <>
               <div className="flex items-baseline gap-3">
                 <div className="flex items-baseline gap-1">
-                  <span style={{ fontFamily: serif, fontSize: 52, color: "var(--dem)", letterSpacing: "-0.03em", lineHeight: "52px" }}>{seatBalance.house.demProjected}</span>
+                  <span style={{ fontFamily: serif, fontSize: mobile ? 40 : 52, color: "var(--dem)", letterSpacing: "-0.03em", lineHeight: mobile ? "40px" : "52px" }}>{seatBalance.house.demProjected}</span>
                   <span style={{ fontSize: 13, color: "var(--dem)" }}>Lean D</span>
                 </div>
                 <span style={{ fontSize: 13, color: "var(--text-faint)" }}>—</span>
                 <div className="flex items-baseline gap-1">
-                  <span style={{ fontFamily: serif, fontSize: 52, color: "var(--rep)", letterSpacing: "-0.03em", lineHeight: "52px" }}>{seatBalance.house.repProjected}</span>
+                  <span style={{ fontFamily: serif, fontSize: mobile ? 40 : 52, color: "var(--rep)", letterSpacing: "-0.03em", lineHeight: mobile ? "40px" : "52px" }}>{seatBalance.house.repProjected}</span>
                   <span style={{ fontSize: 13, color: "var(--rep)" }}>Lean R</span>
                 </div>
               </div>
@@ -907,8 +1295,8 @@ function DashboardContent() {
           )}
         </div>
 
-        {/* Center — Map (Senate only) */}
-        {tab === "SENATE" && (
+        {/* Center — Map (Senate only, hidden on mobile) */}
+        {tab === "SENATE" && !mobile && (
           <div className="flex flex-col flex-1 min-w-0">
             <SenateMap senateRaces={senateRaces} onStateClick={setSelectedRaceCode} />
           </div>
@@ -916,7 +1304,7 @@ function DashboardContent() {
 
         {/* Right — Senate composition bar */}
         {tab === "SENATE" && (
-          <div className="flex flex-col gap-2 justify-center" style={{ width: 280, flexShrink: 0 }}>
+          <div className="flex flex-col gap-2 justify-center" style={mobile ? {} : { width: 280, flexShrink: 0 }}>
             <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
               Senate Composition
             </span>
@@ -927,7 +1315,7 @@ function DashboardContent() {
               const rSafe = SEN_R_BASE;
               return (
                 <>
-                  <div className="flex overflow-hidden" style={{ height: 24, borderRadius: 5 }}>
+                  <div className="flex overflow-hidden" style={{ height: mobile ? 16 : 24, borderRadius: 5 }}>
                     <div style={{ width: `${dSafe}%`, background: "var(--dem)" }} title={`${dSafe} Dem seats not up`} />
                     <div style={{ width: `${dUp}%`, background: "var(--dem-light)", borderLeft: "1px solid var(--bg)" }} title={`${dUp} Dem seats up`} />
                     <div style={{ width: `${rUp}%`, background: "var(--rep-light)", borderLeft: "1px solid var(--bg)" }} title={`${rUp} Rep seats up`} />
@@ -963,70 +1351,96 @@ function DashboardContent() {
       </div>
 
       {/* Main content */}
-      <div className="flex flex-1 overflow-hidden min-h-0">
-        <div className="flex flex-col flex-1 overflow-hidden" style={{ borderRight: "1px solid var(--border)" }}>
-          <div className="flex items-center px-10 shrink-0" style={{ height: 40, borderBottom: "1px solid var(--border)" }}>
-            {tab === "SENATE" ? (
-              <div style={{ width: 160, flexShrink: 0 }}>
+      <div className={mobile ? "flex flex-col" : "flex flex-1 overflow-hidden min-h-0"}>
+        <div className={mobile ? "flex flex-col" : "flex flex-col flex-1 overflow-hidden"} style={mobile ? {} : { borderRight: "1px solid var(--border)" }}>
+          {/* Column headers — hidden on mobile */}
+          {!mobile && (
+            <div className="flex items-center px-10 shrink-0" style={{ height: 40, borderBottom: "1px solid var(--border)" }}>
+              {tab === "SENATE" ? (
+                <div style={{ width: 160, flexShrink: 0 }}>
+                  <span
+                    onClick={() => { setShowAllRaces(!showAllRaces); setSortMode("alpha"); }}
+                    style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, cursor: "pointer", borderBottom: "1px dashed var(--text-faint)", paddingBottom: 1 }}
+                  >
+                    {showAllRaces ? "All Races" : "Battleground Races"}
+                  </span>
+                </div>
+              ) : (
+                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 160, flexShrink: 0 }}>
+                  House Districts
+                </span>
+              )}
+              <span style={{ fontSize: 11, color: "var(--text-faint)", width: 90, flexShrink: 0 }}>Rating</span>
+              <span style={{ fontSize: 11, color: "var(--text-faint)", width: 140, flexShrink: 0 }}>Democrat</span>
+              <span style={{ fontSize: 11, color: "var(--text-faint)", width: 140, flexShrink: 0 }}>Republican</span>
+              <span
+                onClick={() => setSortMode(sortMode === "pres24" ? "alpha" : "pres24")}
+                style={{ fontSize: 11, color: "var(--text-faint)", width: 75, flexShrink: 0, textAlign: "center" as const, cursor: "pointer", borderBottom: sortMode === "pres24" ? "1px solid var(--text-muted)" : "none" }}
+              >'24 Pres{sortMode === "pres24" ? " ↓" : ""}</span>
+              <TrendHeader active={sortMode === "trend"} onClick={() => setSortMode(sortMode === "trend" ? "alpha" : "trend")} />
+              <span
+                onClick={() => setSortMode(sortMode === "polls" ? "alpha" : "polls")}
+                style={{ fontSize: 11, color: "var(--text-faint)", width: 55, flexShrink: 0, textAlign: "center" as const, cursor: "pointer", borderBottom: sortMode === "polls" ? "1px solid var(--text-muted)" : "none" }}
+              ># Polls{sortMode === "polls" ? " ↓" : ""}</span>
+              <span
+                onClick={() => showAllRaces && setSortMode(sortMode === "margin" ? "alpha" : "margin")}
+                style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: "auto", paddingRight: 22, cursor: showAllRaces ? "pointer" : "default", borderBottom: showAllRaces && sortMode === "margin" ? "1px solid var(--text-muted)" : "none" }}
+              >
+                Margin{showAllRaces && sortMode === "margin" ? " ↓" : ""}
+              </span>
+            </div>
+          )}
+          {/* Mobile sub-header */}
+          {mobile && (
+            <div className="flex items-center justify-between px-4 shrink-0" style={{ height: 40, borderBottom: "1px solid var(--border)" }}>
+              {tab === "SENATE" ? (
                 <span
                   onClick={() => { setShowAllRaces(!showAllRaces); setSortMode("alpha"); }}
-                  style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, cursor: "pointer", borderBottom: "1px dashed var(--text-faint)", paddingBottom: 1 }}
+                  style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", cursor: "pointer", borderBottom: "1px dashed var(--text-faint)", paddingBottom: 1 }}
                 >
                   {showAllRaces ? "All Races" : "Battleground Races"}
                 </span>
-              </div>
-            ) : (
-              <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 160, flexShrink: 0 }}>
-                House Districts
+              ) : (
+                <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>
+                  House Districts
+                </span>
+              )}
+              <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
+                {tab === "SENATE" ? sortedSenate.length : sortedHouse.length} races
               </span>
-            )}
-            <span style={{ fontSize: 11, color: "var(--text-faint)", width: 90, flexShrink: 0 }}>Rating</span>
-            <span style={{ fontSize: 11, color: "var(--text-faint)", width: 140, flexShrink: 0 }}>Democrat</span>
-            <span style={{ fontSize: 11, color: "var(--text-faint)", width: 140, flexShrink: 0 }}>Republican</span>
-            <span
-              onClick={() => setSortMode(sortMode === "pres24" ? "alpha" : "pres24")}
-              style={{ fontSize: 11, color: "var(--text-faint)", width: 75, flexShrink: 0, textAlign: "center" as const, cursor: "pointer", borderBottom: sortMode === "pres24" ? "1px solid var(--text-muted)" : "none" }}
-            >'24 Pres{sortMode === "pres24" ? " ↓" : ""}</span>
-            <TrendHeader active={sortMode === "trend"} onClick={() => setSortMode(sortMode === "trend" ? "alpha" : "trend")} />
-            <span
-              onClick={() => setSortMode(sortMode === "polls" ? "alpha" : "polls")}
-              style={{ fontSize: 11, color: "var(--text-faint)", width: 55, flexShrink: 0, textAlign: "center" as const, cursor: "pointer", borderBottom: sortMode === "polls" ? "1px solid var(--text-muted)" : "none" }}
-            ># Polls{sortMode === "polls" ? " ↓" : ""}</span>
-            <span
-              onClick={() => showAllRaces && setSortMode(sortMode === "margin" ? "alpha" : "margin")}
-              style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: "auto", paddingRight: 22, cursor: showAllRaces ? "pointer" : "default", borderBottom: showAllRaces && sortMode === "margin" ? "1px solid var(--text-muted)" : "none" }}
-            >
-              Margin{showAllRaces && sortMode === "margin" ? " ↓" : ""}
-            </span>
-          </div>
-          <div className="flex-1 overflow-y-auto hide-scrollbar">
+            </div>
+          )}
+          <div className={mobile ? "" : "flex-1 overflow-y-auto hide-scrollbar"}>
             {tab === "SENATE"
-              ? sortedSenate.map((race) => <SenateRaceRow key={race.stateCode} race={race} onClick={() => setSelectedRaceCode(race.stateCode)} />)
-              : sortedHouse.map((race) => <HouseRaceRow key={race.district} race={race} />)
+              ? sortedSenate.map((race) => <SenateRaceRow key={race.stateCode} race={race} onClick={() => setSelectedRaceCode(race.stateCode)} mobile={mobile} />)
+              : sortedHouse.map((race) => <HouseRaceRow key={race.district} race={race} mobile={mobile} />)
             }
           </div>
         </div>
 
-        <div className="flex flex-col overflow-y-auto shrink-0" style={{ width: 360, padding: "24px 32px", gap: 32 }}>
-          <div className="flex flex-col gap-4">
-            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>Latest Polls</span>
-            <div className="flex flex-col gap-3.5">
-              {sidebarPolls.length > 0 ? sidebarPolls.map((poll, i) => (
-                <div key={i}>
-                  <RecentPollCard poll={poll} onClick={() => setSelectedRaceCode(poll.stateCode)} />
-                  {i < sidebarPolls.length - 1 && <div style={{ height: 1, background: "var(--border-subtle)", marginTop: 14 }} />}
-                </div>
-              )) : (
-                <span style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>No recent polls available</span>
-              )}
+        {/* Sidebar — hidden on mobile */}
+        {!mobile && (
+          <div className="flex flex-col overflow-y-auto shrink-0" style={{ width: 360, padding: "24px 32px", gap: 32 }}>
+            <div className="flex flex-col gap-4">
+              <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>Latest Polls</span>
+              <div className="flex flex-col gap-3.5">
+                {sidebarPolls.length > 0 ? sidebarPolls.map((poll, i) => (
+                  <div key={i}>
+                    <RecentPollCard poll={poll} onClick={() => setSelectedRaceCode(poll.stateCode)} />
+                    {i < sidebarPolls.length - 1 && <div style={{ height: 1, background: "var(--border-subtle)", marginTop: 14 }} />}
+                  </div>
+                )) : (
+                  <span style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>No recent polls available</span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Footer */}
-      <footer className="flex items-center justify-between px-10 shrink-0" style={{ height: 36, borderTop: "1px solid var(--border)" }}>
-        <span style={{ fontSize: 11, color: "var(--text-faint)" }}>Polls from Wikipedia. Pollster grades from VoteHub. Fundraising from FEC. Updated every 4 hours.</span>
+      <footer className={mobile ? "flex flex-col gap-1 px-4 py-3 shrink-0" : "flex items-center justify-between px-10 shrink-0"} style={mobile ? { borderTop: "1px solid var(--border)" } : { height: 36, borderTop: "1px solid var(--border)" }}>
+        <span style={{ fontSize: 11, color: "var(--text-faint)" }}>Polls from Wikipedia. Grades from VoteHub. FEC fundraising.</span>
         <div className="flex items-center gap-4">
           {lastRefresh && <span style={{ fontFamily: mono, fontSize: 11, color: "var(--text-faint)" }}>Last sync {lastRefresh.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>}
           <span style={{ fontSize: 11, color: "var(--text-faint)" }}>Bellwether v3.0</span>

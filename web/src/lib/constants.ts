@@ -81,3 +81,10 @@ export const TREND_MIN_POLLS = 5;
 
 /** Number of recent polls to compare against prior polls for trend */
 export const TREND_WINDOW = 3;
+
+// ---------------------------------------------------------------------------
+// Primary polling
+// ---------------------------------------------------------------------------
+
+/** Minimum weighted polling average (%) for a primary candidate to be shown */
+export const PRIMARY_MIN_AVG_PCT = 10;

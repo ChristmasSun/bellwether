@@ -5,6 +5,7 @@ import {
   GRADE_WEIGHTS,
   UNRATED_POLLSTER_WEIGHT,
   RATING_THRESHOLDS,
+  PRIMARY_MIN_AVG_PCT,
 } from "./constants";
 
 export { BATTLEGROUND_MARGIN_THRESHOLD, MATCHUP_MIN_POLLS } from "./constants";
@@ -69,6 +70,25 @@ export interface Matchup {
   latestPollDate?: string;
 }
 
+export interface PrimaryPollSample {
+  date: string;
+  candidates: { name: string; pct: number }[];
+  pollster?: string;
+  sampleSize?: number;
+  population?: string;
+  grade?: string | null;
+}
+
+export interface PrimaryMatchup {
+  party: "DEM" | "REP";
+  candidates: { name: string; pct: number }[];
+  pollingSamples: PrimaryPollSample[];
+  pollCount: number;
+  latestPollDate?: string;
+  /** The matchup key, e.g. "Cornyn vs Paxton" */
+  label: string;
+}
+
 export interface SenateRace {
   state: string;
   stateCode: string;
@@ -91,6 +111,7 @@ export interface SenateRace {
   eventsThisWeek?: number;
   latestPollDate?: string;
   matchups: Matchup[];
+  primaryMatchups?: PrimaryMatchup[];
 }
 
 export interface HouseRace {
@@ -723,6 +744,96 @@ export function transformSenateRace(
   const called = Boolean(race.called);
   const winner = race.called_winner === "DEM" ? "D" : race.called_winner === "REP" ? "R" : undefined;
 
+  // ---------------------------------------------------------------------------
+  // Primary polls: single-party polls (all candidates from same party)
+  // ---------------------------------------------------------------------------
+  const primaryPolls = polls.filter((p) => {
+    // Exclude pre-2026 polls (hypothetical matchups before candidates declared)
+    if (p.end_date && new Date(p.end_date).getFullYear() < 2026) return false;
+    const parties = new Set(p.results.filter((r) => r.pct > 0).map((r) => inferParty(r)));
+    // Must have at least 2 candidates from the same party, no cross-party
+    return parties.size === 1 && p.results.filter((r) => r.pct > 0).length >= 2
+      && (parties.has("DEM") || parties.has("REP"));
+  });
+
+  let primaryMatchups: PrimaryMatchup[] | undefined;
+  if (primaryPolls.length > 0) {
+    // Group by party only — one DEM primary, one REP primary
+    const primaryGroups: Record<string, { party: "DEM" | "REP"; polls: typeof primaryPolls }> = {};
+    for (const p of primaryPolls) {
+      const candidates = p.results
+        .filter((r) => r.pct > 0)
+        .sort((a, b) => b.pct - a.pct);
+      const party = inferParty(candidates[0]) as "DEM" | "REP";
+      if (!primaryGroups[party]) primaryGroups[party] = { party, polls: [] };
+      primaryGroups[party].polls.push(p);
+    }
+
+    primaryMatchups = Object.values(primaryGroups)
+      .filter((g) => g.polls.length >= 2) // Need at least 2 polls
+      .map((g) => {
+        const { party, polls: gPolls } = g;
+        // Aggregate: weighted average per candidate across all polls in this group
+        const candidateTotals: Record<string, { weightedSum: number; totalWeight: number; count: number }> = {};
+        for (const p of gPolls) {
+          const w = pollWeight(p.pollster, p.end_date, undefined);
+          for (const r of p.results.filter((r) => r.pct > 0)) {
+            const name = lastName(r.candidate);
+            if (!candidateTotals[name]) candidateTotals[name] = { weightedSum: 0, totalWeight: 0, count: 0 };
+            candidateTotals[name].weightedSum += r.pct * w;
+            candidateTotals[name].totalWeight += w;
+            candidateTotals[name].count += 1;
+          }
+        }
+
+        const candidates = Object.entries(candidateTotals)
+          .map(([name, t]) => ({
+            name,
+            pct: Math.round((t.weightedSum / t.totalWeight) * 10) / 10,
+          }))
+          .filter((c) => c.pct >= PRIMARY_MIN_AVG_PCT)
+          .sort((a, b) => b.pct - a.pct);
+
+        // Set of names that passed the threshold — used to filter poll samples too
+        const eligibleNames = new Set(candidates.map((c) => c.name));
+
+        const samples: PrimaryPollSample[] = gPolls
+          .filter((p) => p.end_date)
+          .sort((a, b) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime())
+          .map((p) => ({
+            date: (() => {
+              const d = new Date(p.end_date);
+              const base = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              return d.getFullYear() < new Date().getFullYear() ? base + " (" + d.getFullYear() + ")" : base;
+            })(),
+            candidates: p.results
+              .filter((r) => r.pct > 0 && eligibleNames.has(lastName(r.candidate)))
+              .sort((a, b) => b.pct - a.pct)
+              .map((r) => ({ name: lastName(r.candidate), pct: r.pct })),
+            pollster: p.pollster,
+            sampleSize: p.sample_size,
+            population: p.population?.toUpperCase(),
+            grade: p.pollster ? getPollsterGrade(p.pollster) : null,
+          }));
+
+        const top2 = candidates.slice(0, 2);
+        return {
+          party,
+          candidates,
+          pollingSamples: samples,
+          pollCount: gPolls.length,
+          latestPollDate: gPolls[gPolls.length - 1]?.end_date
+            ? new Date(gPolls[gPolls.length - 1].end_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+            : undefined,
+          label: top2.map((c) => c.name).join(" vs "),
+        };
+      })
+      .filter((m) => m.candidates.length >= 2) // Need at least 2 eligible candidates
+      .sort((a, b) => b.pollCount - a.pollCount);
+
+    if (primaryMatchups.length === 0) primaryMatchups = undefined;
+  }
+
   return {
     state: race.state,
     stateCode: race.state_abbr,
@@ -743,6 +854,7 @@ export function transformSenateRace(
     eventsThisWeek,
     latestPollDate,
     matchups,
+    ...(primaryMatchups && { primaryMatchups }),
     ...(fecCandidates && fecCandidates.length > 0 && {
       fecCandidates: fecCandidates.map((c: any) => ({
         name: c.name as string,
