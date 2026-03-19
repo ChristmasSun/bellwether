@@ -7,6 +7,7 @@ dependencies = [
     "uvicorn[standard]",
     "httpx",
     "beautifulsoup4",
+    "lxml",
     "sqlalchemy[asyncio]",
     "aiosqlite",
     "apscheduler",
