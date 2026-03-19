@@ -1089,6 +1089,51 @@ function RaceDetailView({ race, onBack, lastRefresh, mobile }: { race: SenateRac
 // Dashboard Content
 // ---------------------------------------------------------------------------
 
+function AboutView({ onBack, mobile }: { onBack: () => void; mobile?: boolean }) {
+  return (
+    <div className={mobile ? "flex flex-col min-h-screen" : "h-screen flex flex-col overflow-hidden"} style={{ background: "var(--bg)" }}>
+      <header className="flex items-center shrink-0" style={{ height: 56, borderBottom: "1px solid var(--border)", padding: mobile ? "0 16px" : "0 40px" }}>
+        <button onClick={onBack} className="flex items-center gap-2 mr-4" style={{ color: "var(--text-muted)", fontSize: 13, background: "none", border: "none", cursor: "pointer" }}>
+          <ArrowLeft size={16} /> Back
+        </button>
+        {!mobile && (
+          <div className="flex items-baseline gap-3">
+            <span style={{ fontFamily: serif, fontSize: 28, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Bellwether</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>2026 Midterms</span>
+          </div>
+        )}
+      </header>
+
+      <div className="flex-1 overflow-y-auto">
+        <div style={{ maxWidth: 640, margin: "0 auto", padding: mobile ? "32px 20px 60px" : "56px 40px 80px" }}>
+          <h1 style={{ fontFamily: serif, fontSize: mobile ? 32 : 40, color: "var(--text-primary)", letterSpacing: "-0.02em", marginBottom: 24 }}>About Bellwether</h1>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 20, fontSize: 15, lineHeight: 1.7, color: "var(--text-secondary)" }}>
+            <p>
+              After FiveThirtyEight shut down, there didn&apos;t seem to be a nice easy place to track
+              election polling. especially early matchups before primaries have even happened.{" "}
+              <a href="https://votehub.com" target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-primary)", textDecoration: "underline", textUnderlineOffset: 3 }}>VoteHub</a>{" "}
+              comes close, but doesn&apos;t really seem to do head-to-head matchup data until it is much closer to election time. '
+            </p>
+            <p>
+              So I made this site, a polling aggregator focused on 2026 U.S. Senate and House races.
+              It pulls polls from Wikipedia, uses pollster grades from VoteHub, and fundraising data from the FEC,
+              then weights and averages everything to give data on how each race stands. Has data on both primaries and general elections.
+            </p>
+            <p>
+              Reach out to me{" "}
+              <a href="https://x.com/VedAnand07" target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-primary)", textDecoration: "underline", textUnderlineOffset: 3 }}>here</a>{" "}
+              if you have any thoughts!
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
 function DashboardContent() {
   const {
     senateRaces, houseRaces, recentPolls, seatBalance,
@@ -1098,6 +1143,7 @@ function DashboardContent() {
 
   const [tab, setTab] = useState<Tab>("SENATE");
   const [selectedRaceCode, setSelectedRaceCode] = useState<string | null>(null);
+  const [showAbout, setShowAbout] = useState(false);
   const [showAllRaces, setShowAllRaces] = useState(false);
   type SortMode = "alpha" | "margin" | "pres24" | "polls" | "trend";
   const [sortMode, setSortMode] = useState<SortMode>("alpha");
@@ -1109,6 +1155,11 @@ function DashboardContent() {
   if (!mounted) return null;
   if (loading) return <LoadingSkeleton />;
   if (error && senateRaces.length === 0) return <ErrorScreen error={error} onRetry={refetch} />;
+
+  // If about page is shown
+  if (showAbout) {
+    return <AboutView onBack={() => setShowAbout(false)} mobile={mobile} />;
+  }
 
   // If a race is selected, show detail view
   const selectedRace = selectedRaceCode ? senateRaces.find((r) => r.stateCode === selectedRaceCode) : null;
@@ -1223,7 +1274,7 @@ function DashboardContent() {
               {t === "SENATE" ? "Senate" : "House"}
             </button>
           ))}
-          <button onClick={refetch} className="p-1.5 rounded" style={{ color: "var(--text-muted)" }} title="Refresh data"><RefreshCw size={14} /></button>
+          <button onClick={() => setShowAbout(true)} style={{ fontSize: 13, fontWeight: 400, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", borderBottom: "2px solid transparent", paddingBottom: 2 }}>About</button>
         </nav>
       </header>
 
