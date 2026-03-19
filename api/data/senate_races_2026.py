@@ -1,6 +1,7 @@
 """
 2026 Senate races seed data.
-All 35 seats up in 2026 (Class II senators elected in 2020 + special elections).
+33 Class II seats + 2 special elections (FL, OH) = 35 total.
+Verified from Ballotpedia (March 2026).
 """
 
 SENATE_RACES_2026 = [
@@ -13,7 +14,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "DEM",
         "is_open": False,
         "cook_rating": "Toss-up",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/georgia",
     },
     {
         "state": "Michigan",
@@ -21,9 +21,8 @@ SENATE_RACES_2026 = [
         "seat_class": 2,
         "incumbent_name": "Gary Peters",
         "incumbent_party": "DEM",
-        "is_open": True,  # Peters is retiring
+        "is_open": True,  # Peters retiring
         "cook_rating": "Lean DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/michigan",
     },
     {
         "state": "Minnesota",
@@ -31,9 +30,8 @@ SENATE_RACES_2026 = [
         "seat_class": 2,
         "incumbent_name": "Tina Smith",
         "incumbent_party": "DEM",
-        "is_open": True,  # Smith is retiring
+        "is_open": True,  # Smith retiring
         "cook_rating": "Lean DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/minnesota",
     },
     {
         "state": "New Hampshire",
@@ -41,9 +39,8 @@ SENATE_RACES_2026 = [
         "seat_class": 2,
         "incumbent_name": "Jeanne Shaheen",
         "incumbent_party": "DEM",
-        "is_open": True,  # Shaheen retired
+        "is_open": True,  # Shaheen retiring
         "cook_rating": "Lean DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/new-hampshire",
     },
     {
         "state": "Maine",
@@ -53,7 +50,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Likely REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/maine",
     },
     {
         "state": "North Carolina",
@@ -61,9 +57,8 @@ SENATE_RACES_2026 = [
         "seat_class": 2,
         "incumbent_name": "Thom Tillis",
         "incumbent_party": "REP",
-        "is_open": False,
+        "is_open": True,  # Tillis retiring
         "cook_rating": "Likely REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/north-carolina",
     },
     {
         "state": "Colorado",
@@ -73,7 +68,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "DEM",
         "is_open": False,
         "cook_rating": "Lean DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/colorado",
     },
     {
         "state": "Iowa",
@@ -81,11 +75,38 @@ SENATE_RACES_2026 = [
         "seat_class": 2,
         "incumbent_name": "Joni Ernst",
         "incumbent_party": "REP",
+        "is_open": True,  # Ernst retiring
+        "cook_rating": "Likely REP",
+    },
+    # --- Special elections ---
+    {
+        "state": "Ohio",
+        "state_abbr": "OH",
+        "seat_class": 0,  # Special election (Vance vacancy)
+        "incumbent_name": "Jon Husted",
+        "incumbent_party": "REP",
+        "is_open": False,
+        "cook_rating": "Toss-up",
+    },
+    {
+        "state": "Florida",
+        "state_abbr": "FL",
+        "seat_class": 0,  # Special election (Rubio vacancy)
+        "incumbent_name": "Ashley Moody",
+        "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Likely REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/iowa",
     },
-    # --- Safe Democratic seats ---
+    # --- Safe seats ---
+    {
+        "state": "Alabama",
+        "state_abbr": "AL",
+        "seat_class": 2,
+        "incumbent_name": "Tommy Tuberville",
+        "incumbent_party": "REP",
+        "is_open": False,
+        "cook_rating": "Safe REP",
+    },
     {
         "state": "Alaska",
         "state_abbr": "AK",
@@ -94,7 +115,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/alaska",
     },
     {
         "state": "Arkansas",
@@ -104,7 +124,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/arkansas",
     },
     {
         "state": "Delaware",
@@ -114,7 +133,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "DEM",
         "is_open": False,
         "cook_rating": "Safe DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/delaware",
     },
     {
         "state": "Idaho",
@@ -124,7 +142,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/idaho",
     },
     {
         "state": "Illinois",
@@ -134,17 +151,15 @@ SENATE_RACES_2026 = [
         "incumbent_party": "DEM",
         "is_open": True,  # Durbin retiring
         "cook_rating": "Safe DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/illinois",
     },
     {
         "state": "Kansas",
         "state_abbr": "KS",
         "seat_class": 2,
-        "incumbent_name": "Jerry Moran",
+        "incumbent_name": "Roger Marshall",
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/kansas",
     },
     {
         "state": "Kentucky",
@@ -154,7 +169,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "REP",
         "is_open": True,  # McConnell retiring
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/kentucky",
     },
     {
         "state": "Louisiana",
@@ -164,17 +178,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/louisiana",
-    },
-    {
-        "state": "Maryland",
-        "state_abbr": "MD",
-        "seat_class": 2,
-        "incumbent_name": "Chris Van Hollen",
-        "incumbent_party": "DEM",
-        "is_open": False,
-        "cook_rating": "Safe DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/maryland",
     },
     {
         "state": "Massachusetts",
@@ -184,7 +187,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "DEM",
         "is_open": False,
         "cook_rating": "Safe DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/massachusetts",
     },
     {
         "state": "Mississippi",
@@ -194,7 +196,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/mississippi",
     },
     {
         "state": "Montana",
@@ -202,19 +203,17 @@ SENATE_RACES_2026 = [
         "seat_class": 2,
         "incumbent_name": "Steve Daines",
         "incumbent_party": "REP",
-        "is_open": False,
+        "is_open": True,  # Daines retiring
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/montana",
     },
     {
         "state": "Nebraska",
         "state_abbr": "NE",
         "seat_class": 2,
-        "incumbent_name": "Deb Fischer",
+        "incumbent_name": "Pete Ricketts",
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/nebraska",
     },
     {
         "state": "New Jersey",
@@ -224,7 +223,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "DEM",
         "is_open": False,
         "cook_rating": "Safe DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/new-jersey",
     },
     {
         "state": "New Mexico",
@@ -234,17 +232,15 @@ SENATE_RACES_2026 = [
         "incumbent_party": "DEM",
         "is_open": False,
         "cook_rating": "Safe DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/new-mexico",
     },
     {
         "state": "Oklahoma",
         "state_abbr": "OK",
         "seat_class": 2,
-        "incumbent_name": "James Lankford",
+        "incumbent_name": "Markwayne Mullin",
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/oklahoma",
     },
     {
         "state": "Oregon",
@@ -254,7 +250,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "DEM",
         "is_open": False,
         "cook_rating": "Safe DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/oregon",
     },
     {
         "state": "Rhode Island",
@@ -264,7 +259,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "DEM",
         "is_open": False,
         "cook_rating": "Safe DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/rhode-island",
     },
     {
         "state": "South Carolina",
@@ -274,7 +268,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/south-carolina",
     },
     {
         "state": "South Dakota",
@@ -284,7 +277,15 @@ SENATE_RACES_2026 = [
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/south-dakota",
+    },
+    {
+        "state": "Tennessee",
+        "state_abbr": "TN",
+        "seat_class": 2,
+        "incumbent_name": "Bill Hagerty",
+        "incumbent_party": "REP",
+        "is_open": False,
+        "cook_rating": "Safe REP",
     },
     {
         "state": "Texas",
@@ -294,7 +295,6 @@ SENATE_RACES_2026 = [
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Likely REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/texas",
     },
     {
         "state": "Virginia",
@@ -304,26 +304,23 @@ SENATE_RACES_2026 = [
         "incumbent_party": "DEM",
         "is_open": False,
         "cook_rating": "Likely DEM",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/virginia",
     },
     {
         "state": "West Virginia",
         "state_abbr": "WV",
         "seat_class": 2,
-        "incumbent_name": "Jim Justice",
+        "incumbent_name": "Shelley Moore Capito",
         "incumbent_party": "REP",
         "is_open": False,
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/west-virginia",
     },
     {
         "state": "Wyoming",
         "state_abbr": "WY",
         "seat_class": 2,
-        "incumbent_name": "John Barrasso",
+        "incumbent_name": "Cynthia Lummis",
         "incumbent_party": "REP",
-        "is_open": False,
+        "is_open": True,  # Lummis retiring
         "cook_rating": "Safe REP",
-        "race_url_rcp": "https://www.realclearpolling.com/elections/senate/2026/wyoming",
     },
 ]

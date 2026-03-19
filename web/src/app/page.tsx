@@ -2,8 +2,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { ElectionDataProvider, useElectionData } from "@/lib/ElectionDataContext";
 import { type SenateRace, type HouseRace, type Matchup, STATE_NAMES, BATTLEGROUND_MARGIN_THRESHOLD, STATE_ELECTION_HISTORY, MATCHUP_MIN_POLLS, type StateElectionResult } from "@/lib/electionData";
+import { SEN_D_BASE, SEN_R_BASE, TREND_MIN_SHIFT, TREND_MIN_POLLS, TREND_WINDOW, INDEPENDENT_CANDIDATES, IND_COLOR } from "@/lib/constants";
 import { RefreshCw, ArrowLeft } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import dynamic from "next/dynamic";
+const SenateMap = dynamic(() => import("@/components/elections/USAMap").then(m => ({ default: m.SenateMap })), { ssr: false });
 
 type Tab = "SENATE" | "HOUSE";
 
@@ -37,14 +40,14 @@ function marginColor(margin: number): string {
  */
 function pollTrend(race: SenateRace): { shift: number; label: string; color: string } | null {
   const samples = race.pollingSamples;
-  if (samples.length < 5) return null;
-  const recent = samples.slice(-3);
-  const prior = samples.slice(-6, -3);
+  if (samples.length < TREND_MIN_POLLS) return null;
+  const recent = samples.slice(-TREND_WINDOW);
+  const prior = samples.slice(-(TREND_WINDOW * 2), -TREND_WINDOW);
   if (prior.length < 2) return null;
   const recentAvg = recent.reduce((s, p) => s + (p.dem - p.rep), 0) / recent.length;
   const priorAvg = prior.reduce((s, p) => s + (p.dem - p.rep), 0) / prior.length;
   const shift = Math.round((recentAvg - priorAvg) * 10) / 10;
-  if (Math.abs(shift) < 0.1) return null; // only hide if essentially no movement
+  if (Math.abs(shift) < TREND_MIN_SHIFT) return null;
   return {
     shift,
     label: shift > 0 ? `D+${Math.abs(shift).toFixed(1)}` : `R+${Math.abs(shift).toFixed(1)}`,
@@ -65,14 +68,15 @@ function presBaseline(stateCode: string): { margin: number; label: string; color
   };
 }
 
-function TrendHeader() {
+function TrendHeader({ active, onClick }: { active: boolean; onClick: () => void }) {
   const [show, setShow] = useState(false);
   return (
     <span
       className="flex items-center justify-center gap-1"
-      style={{ fontSize: 11, color: "var(--text-faint)", width: 75, flexShrink: 0, position: "relative" as const }}
+      style={{ fontSize: 11, color: "var(--text-faint)", width: 75, flexShrink: 0, position: "relative" as const, cursor: "pointer", borderBottom: active ? "1px solid var(--text-muted)" : "none" }}
+      onClick={onClick}
     >
-      Trend
+      Trend{active ? " ↓" : ""}
       <span
         onMouseEnter={() => setShow(true)}
         onMouseLeave={() => setShow(false)}
@@ -97,6 +101,14 @@ function TrendHeader() {
       )}
     </span>
   );
+}
+
+function isIndependent(candidateName: string): { note: string } | null {
+  return INDEPENDENT_CANDIDATES[candidateName] ?? null;
+}
+
+function demColor(candidateName: string): string {
+  return isIndependent(candidateName) ? IND_COLOR : "var(--dem)";
 }
 
 function incumbentLabel(race: SenateRace): string {
@@ -168,8 +180,13 @@ function SenateRaceRow({ race, onClick }: { race: SenateRace; onClick: () => voi
         <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{race.lean}</span>
       </div>
       <div className="flex flex-col gap-0.5" style={{ width: 140, flexShrink: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--dem)" }}>{race.demCandidate}</span>
-        <span style={{ fontFamily: mono, fontSize: 12, color: "var(--dem)" }}>{race.demPct > 0 ? `${race.demPct}%` : "—"}</span>
+        <div className="flex items-center gap-1.5">
+          <span style={{ fontSize: 13, fontWeight: 500, color: demColor(race.demCandidate) }}>{race.demCandidate}</span>
+          {isIndependent(race.demCandidate) && (
+            <span style={{ fontSize: 9, fontWeight: 500, color: IND_COLOR, background: "rgba(107,91,149,0.1)", padding: "1px 4px", borderRadius: 3, letterSpacing: "0.03em" }}>IND</span>
+          )}
+        </div>
+        <span style={{ fontFamily: mono, fontSize: 12, color: demColor(race.demCandidate) }}>{race.demPct > 0 ? `${race.demPct}%` : "—"}</span>
       </div>
       <div className="flex flex-col gap-0.5" style={{ width: 140, flexShrink: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 500, color: "var(--rep)" }}>{race.repCandidate}</span>
@@ -196,10 +213,19 @@ function SenateRaceRow({ race, onClick }: { race: SenateRace; onClick: () => voi
           {race.pollCount > 0 ? race.pollCount : "—"}
         </span>
       </div>
-      <div className="flex items-center justify-end ml-auto">
-        <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 600, color: marginColor(race.margin) }}>
-          {race.demPct > 0 || race.repPct > 0 ? marginLabel(race.margin) : "—"}
-        </span>
+      <div className="flex items-center justify-end" style={{ marginLeft: "auto" }}>
+        {race.demPct > 0 || race.repPct > 0 ? (
+          <span style={{
+            fontFamily: mono, fontSize: 13, fontWeight: 700, letterSpacing: "0.02em",
+            color: "#fff",
+            background: race.margin > 0 ? "var(--dem)" : race.margin < 0 ? "var(--rep)" : "var(--tossup-text)",
+            padding: "4px 10px", borderRadius: 5,
+          }}>
+            {marginLabel(race.margin)}
+          </span>
+        ) : (
+          <span style={{ fontSize: 13, color: "var(--text-faint)" }}>—</span>
+        )}
       </div>
     </div>
   );
@@ -445,16 +471,20 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
           <div className="flex items-center justify-between" style={{ padding: "24px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--dem)" }} />
-                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--dem)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>Democrat</span>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: demColor(active.demCandidate) }} />
+                <span style={{ fontSize: 11, fontWeight: 500, color: demColor(active.demCandidate), letterSpacing: "0.08em", textTransform: "uppercase" as const }}>
+                  {isIndependent(active.demCandidate) ? "Independent" : "Democrat"}
+                </span>
               </div>
               <span style={{ fontFamily: serif, fontSize: 32, color: "var(--text-primary)" }}>{active.demCandidate || "TBD"}</span>
-              {race.incumbent === "D" && race.incumbentName && (
+              {isIndependent(active.demCandidate) ? (
+                <span style={{ fontSize: 12, color: IND_COLOR }}>{isIndependent(active.demCandidate)!.note}</span>
+              ) : race.incumbent === "D" && race.incumbentName && !race.called && race.incumbentName.toLowerCase().includes(active.demCandidate.toLowerCase()) ? (
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Incumbent U.S. Senator</span>
-              )}
+              ) : null}
             </div>
             <div className="flex items-baseline gap-3">
-              <span style={{ fontFamily: serif, fontSize: 48, color: "var(--dem)", letterSpacing: "-0.02em" }}>
+              <span style={{ fontFamily: serif, fontSize: 48, color: demColor(active.demCandidate), letterSpacing: "-0.02em" }}>
                 {active.demPct > 0 ? active.demPct.toFixed(1) : "—"}
               </span>
               <span style={{ fontSize: 16, color: "var(--text-faint)" }}>vs</span>
@@ -468,7 +498,7 @@ function RaceDetailView({ race, onBack, lastRefresh }: { race: SenateRace; onBac
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--rep)" }} />
               </div>
               <span style={{ fontFamily: serif, fontSize: 32, color: "var(--text-primary)" }}>{active.repCandidate || "TBD"}</span>
-              {race.incumbent === "R" && race.incumbentName && (
+              {race.incumbent === "R" && race.incumbentName && race.incumbentName.toLowerCase().includes(active.repCandidate.toLowerCase()) && (
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Incumbent U.S. Senator</span>
               )}
             </div>
@@ -680,6 +710,9 @@ function DashboardContent() {
 
   const [tab, setTab] = useState<Tab>("SENATE");
   const [selectedRaceCode, setSelectedRaceCode] = useState<string | null>(null);
+  const [showAllRaces, setShowAllRaces] = useState(false);
+  type SortMode = "alpha" | "margin" | "pres24" | "polls" | "trend";
+  const [sortMode, setSortMode] = useState<SortMode>("alpha");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -695,11 +728,9 @@ function DashboardContent() {
   }
 
   // Compute seat projections
-  const SEN_D_BASE = 33;
-  const SEN_R_BASE = 35;
   const { demProjected: sDem, repProjected: sRep, tossUp: sToss } = seatBalance.senate;
-  const senDTotal = SEN_D_BASE + sDem + Math.floor(sToss / 2);
-  const senRTotal = SEN_R_BASE + sRep + Math.ceil(sToss / 2);
+  const senDTotal = SEN_D_BASE + sDem;
+  const senRTotal = SEN_R_BASE + sRep;
   const senTotal = senDTotal + senRTotal;
   const demPct = senTotal > 0 ? Math.round((senDTotal / senTotal) * 100) : 50;
   const tossPct = senTotal > 0 ? Math.round((sToss / senTotal) * 100) : 0;
@@ -717,7 +748,7 @@ function DashboardContent() {
       const isGeneric = (name: string) => /generic|someone else|opponent/i.test(name);
       return !isGeneric(dem.candidate) && !isGeneric(rep.candidate);
     })
-    .slice(0, 5)
+    .slice(0, 10)
     .map((p) => {
       const dem = p.results.find((r) => r.party === "DEM" || r.party === "D")!;
       const rep = p.results.find((r) => r.party === "REP" || r.party === "R")!;
@@ -737,7 +768,56 @@ function DashboardContent() {
       };
     });
 
-  const sortedSenate = senateRaces.filter((r) => r.key).sort((a, b) => Math.abs(a.margin) - Math.abs(b.margin));
+  const sortedSenate = showAllRaces
+    ? [...senateRaces].sort((a, b) => {
+        if (sortMode === "margin") {
+          const aHas = a.demPct > 0 && a.repPct > 0;
+          const bHas = b.demPct > 0 && b.repPct > 0;
+          if (aHas && !bHas) return -1;
+          if (!aHas && bHas) return 1;
+          return Math.abs(a.margin) - Math.abs(b.margin);
+        }
+        if (sortMode === "pres24") {
+          const aP = STATE_ELECTION_HISTORY[a.stateCode]?.find(h => h.label === "2024 PRES");
+          const bP = STATE_ELECTION_HISTORY[b.stateCode]?.find(h => h.label === "2024 PRES");
+          if (aP && !bP) return -1;
+          if (!aP && bP) return 1;
+          if (aP && bP) return Math.abs(aP.margin) - Math.abs(bP.margin);
+          return 0;
+        }
+        if (sortMode === "polls") {
+          return b.pollCount - a.pollCount;
+        }
+        if (sortMode === "trend") {
+          const aT = pollTrend(a);
+          const bT = pollTrend(b);
+          if (aT && !bT) return -1;
+          if (!aT && bT) return 1;
+          if (aT && bT) return Math.abs(bT.shift) - Math.abs(aT.shift);
+          return 0;
+        }
+        return a.state.localeCompare(b.state);
+      })
+    : senateRaces.filter((r) => r.key).sort((a, b) => {
+        if (sortMode === "pres24") {
+          const aP = STATE_ELECTION_HISTORY[a.stateCode]?.find(h => h.label === "2024 PRES");
+          const bP = STATE_ELECTION_HISTORY[b.stateCode]?.find(h => h.label === "2024 PRES");
+          if (aP && !bP) return -1;
+          if (!aP && bP) return 1;
+          if (aP && bP) return Math.abs(aP.margin) - Math.abs(bP.margin);
+          return 0;
+        }
+        if (sortMode === "polls") return b.pollCount - a.pollCount;
+        if (sortMode === "trend") {
+          const aT = pollTrend(a);
+          const bT = pollTrend(b);
+          if (aT && !bT) return -1;
+          if (!aT && bT) return 1;
+          if (aT && bT) return Math.abs(bT.shift) - Math.abs(aT.shift);
+          return 0;
+        }
+        return Math.abs(a.margin) - Math.abs(b.margin);
+      });
   const sortedHouse = [...houseRaces].sort((a, b) => Math.abs(a.demPct - a.repPct) - Math.abs(b.demPct - b.repPct));
 
   return (
@@ -759,147 +839,167 @@ function DashboardContent() {
       </header>
 
       {/* Hero */}
-      <div className="flex px-10 shrink-0" style={{ borderBottom: "1px solid var(--border)", paddingTop: 36, paddingBottom: 28, gap: 48 }}>
-        <div className="flex flex-col gap-3" style={{ flex: 1 }}>
+      <div className="flex px-10 shrink-0" style={{ borderBottom: "1px solid var(--border)", paddingTop: 24, paddingBottom: 20, gap: 32 }}>
+        {/* Left — Projection */}
+        <div className="flex flex-col gap-2" style={{ width: 340, flexShrink: 0 }}>
           <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
-            {tab === "SENATE" ? "Projected Senate Balance of Power" : "House Competitive Races"}
+            {tab === "SENATE" ? "Projected Senate Balance" : "House Competitive Races"}
           </span>
           {tab === "SENATE" ? (
             <>
-              <div className="flex items-baseline gap-4">
-                <div className="flex items-baseline gap-1.5">
-                  <span style={{ fontFamily: serif, fontSize: 64, color: "var(--dem)", letterSpacing: "-0.03em", lineHeight: "64px" }}>{senDTotal}</span>
-                  <span style={{ fontSize: 14, color: "var(--dem)" }}>Dem</span>
+              <div className="flex items-baseline gap-3">
+                <div className="flex items-baseline gap-1">
+                  <span style={{ fontFamily: serif, fontSize: 52, color: "var(--dem)", letterSpacing: "-0.03em", lineHeight: "52px" }}>{senDTotal}</span>
+                  <span style={{ fontSize: 13, color: "var(--dem)" }}>Dem</span>
                 </div>
-                <span style={{ fontSize: 14, color: "var(--text-faint)" }}>—</span>
-                <div className="flex items-baseline gap-1.5">
-                  <span style={{ fontFamily: serif, fontSize: 64, color: "var(--rep)", letterSpacing: "-0.03em", lineHeight: "64px" }}>{senRTotal}</span>
-                  <span style={{ fontSize: 14, color: "var(--rep)" }}>Rep</span>
+                <span style={{ fontSize: 13, color: "var(--text-faint)" }}>—</span>
+                <div className="flex items-baseline gap-1">
+                  <span style={{ fontFamily: serif, fontSize: 52, color: "var(--rep)", letterSpacing: "-0.03em", lineHeight: "52px" }}>{senRTotal}</span>
+                  <span style={{ fontSize: 13, color: "var(--rep)" }}>Rep</span>
                 </div>
-                {sToss > 0 && (
-                  <span style={{ fontFamily: mono, fontSize: 13, color: "var(--text-muted)", marginLeft: 8 }}>{sToss} toss-up</span>
-                )}
               </div>
               {/* Projection bar */}
-              <div className="flex flex-col gap-1" style={{ maxWidth: 480 }}>
-                <div className="flex overflow-hidden" style={{ height: 8, borderRadius: 4 }}>
-                  <div style={{ width: `${demPct}%`, background: "var(--dem)" }} />
-                  {tossPct > 0 && <div style={{ width: `${tossPct}%`, background: "var(--tossup)" }} />}
-                  <div style={{ flex: 1, background: "var(--rep)" }} />
-                </div>
-                <div className="flex justify-between">
-                  <span style={{ fontFamily: mono, fontSize: 11, color: "var(--dem)" }}>{senDTotal} projected</span>
-                  <span style={{ fontFamily: mono, fontSize: 11, color: "var(--rep)" }}>{senRTotal} projected</span>
-                </div>
+              {(() => {
+                // sDem/sRep already include toss-ups assigned by margin
+                const total = senDTotal + senRTotal;
+                return (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex overflow-hidden" style={{ height: 10, borderRadius: 5 }}>
+                      <div style={{ width: `${(senDTotal / total) * 100}%`, background: "var(--dem)" }} />
+                      <div style={{ flex: 1, background: "var(--rep)" }} />
+                    </div>
+                    <div className="flex justify-between">
+                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--dem)" }}>{senDTotal} projected</span>
+                      {sToss > 0 && <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)" }}>{sToss} toss-up</span>}
+                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--rep)" }}>{senRTotal} projected</span>
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="flex gap-4" style={{ marginTop: 4 }}>
+                {[
+                  { val: senateRaces.length, label: "Races", color: "var(--text-primary)" },
+                  { val: battlegrounds, label: "Battlegrounds", color: "var(--accent)" },
+                  { val: totalPolls, label: "Total Polls", color: "var(--text-primary)" },
+                ].map((s) => (
+                  <div key={s.label} className="flex flex-col gap-0">
+                    <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 500, color: s.color, letterSpacing: "-0.02em" }}>{s.val}</span>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{s.label}</span>
+                  </div>
+                ))}
               </div>
-              <span style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: "20px" }}>
-                50 seats needed for control. {senateRaces.length} seats contested this cycle.
-              </span>
             </>
           ) : (
             <>
-              <div className="flex items-baseline gap-4">
-                <div className="flex items-baseline gap-1.5">
-                  <span style={{ fontFamily: serif, fontSize: 64, color: "var(--dem)", letterSpacing: "-0.03em", lineHeight: "64px" }}>{seatBalance.house.demProjected}</span>
-                  <span style={{ fontSize: 14, color: "var(--dem)" }}>Lean D</span>
+              <div className="flex items-baseline gap-3">
+                <div className="flex items-baseline gap-1">
+                  <span style={{ fontFamily: serif, fontSize: 52, color: "var(--dem)", letterSpacing: "-0.03em", lineHeight: "52px" }}>{seatBalance.house.demProjected}</span>
+                  <span style={{ fontSize: 13, color: "var(--dem)" }}>Lean D</span>
                 </div>
-                <span style={{ fontSize: 14, color: "var(--text-faint)" }}>—</span>
-                <div className="flex items-baseline gap-1.5">
-                  <span style={{ fontFamily: serif, fontSize: 64, color: "var(--rep)", letterSpacing: "-0.03em", lineHeight: "64px" }}>{seatBalance.house.repProjected}</span>
-                  <span style={{ fontSize: 14, color: "var(--rep)" }}>Lean R</span>
+                <span style={{ fontSize: 13, color: "var(--text-faint)" }}>—</span>
+                <div className="flex items-baseline gap-1">
+                  <span style={{ fontFamily: serif, fontSize: 52, color: "var(--rep)", letterSpacing: "-0.03em", lineHeight: "52px" }}>{seatBalance.house.repProjected}</span>
+                  <span style={{ fontSize: 13, color: "var(--rep)" }}>Lean R</span>
                 </div>
-                {seatBalance.house.tossUp > 0 && (
-                  <>
-                    <span style={{ fontSize: 14, color: "var(--text-faint)" }}>—</span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span style={{ fontFamily: serif, fontSize: 64, color: "var(--tossup-text)", letterSpacing: "-0.03em", lineHeight: "64px" }}>{seatBalance.house.tossUp}</span>
-                      <span style={{ fontSize: 14, color: "var(--tossup-text)" }}>Toss-up</span>
-                    </div>
-                  </>
-                )}
               </div>
-              <span style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: "20px" }}>{houseRaces.length} competitive districts tracked. 218 needed for majority.</span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{houseRaces.length} competitive districts tracked. 218 needed for majority.</span>
             </>
           )}
         </div>
 
-        {/* Right side — Senate composition bar or stats */}
-        <div className="flex flex-col gap-4" style={{ width: 340 }}>
-          {tab === "SENATE" && (() => {
-            // Senate composition: 47D total (33 safe + 14 up), 53R total (35 safe + 18 up)
-            // Show as a bar with lighter shades for seats up for reelection
-            const dSafe = SEN_D_BASE; // Dem seats NOT up
-            const dUp = senateRaces.filter((r) => r.incumbent === "D" || (!r.incumbent && r.lean.includes("D"))).length;
-            const rUp = senateRaces.filter((r) => r.incumbent === "R" || (!r.incumbent && r.lean.includes("R"))).length;
-            const rSafe = SEN_R_BASE; // Rep seats NOT up
-            const total = 100;
-            return (
-              <div className="flex flex-col gap-2">
-                <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
-                  Senate Composition
-                </span>
-                <div className="flex overflow-hidden" style={{ height: 28, borderRadius: 6 }}>
-                  <div style={{ width: `${dSafe}%`, background: "var(--dem)" }} title={`${dSafe} Dem seats not up`} />
-                  <div style={{ width: `${dUp}%`, background: "var(--dem-light)", borderLeft: "1px solid var(--bg)" }} title={`${dUp} Dem seats up for reelection`} />
-                  <div style={{ width: `${rUp}%`, background: "var(--rep-light)", borderLeft: "1px solid var(--bg)" }} title={`${rUp} Rep seats up for reelection`} />
-                  <div style={{ width: `${rSafe}%`, background: "var(--rep)", borderLeft: "1px solid var(--bg)" }} title={`${rSafe} Rep seats not up`} />
-                </div>
-                <div className="flex justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5">
-                      <div style={{ width: 8, height: 8, borderRadius: 2, background: "var(--dem)" }} />
-                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)" }}>{dSafe} safe</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div style={{ width: 8, height: 8, borderRadius: 2, background: "var(--dem-light)" }} />
-                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)" }}>{dUp} up</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5">
-                      <div style={{ width: 8, height: 8, borderRadius: 2, background: "var(--rep-light)" }} />
-                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)" }}>{rUp} up</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div style={{ width: 8, height: 8, borderRadius: 2, background: "var(--rep)" }} />
-                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)" }}>{rSafe} safe</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-          <div className="flex gap-4">
-            {[
-              { val: tab === "SENATE" ? senateRaces.length : houseRaces.length, label: "Races tracked", color: "var(--text-primary)" },
-              { val: tab === "SENATE" ? battlegrounds : seatBalance.house.tossUp, label: tab === "SENATE" ? "Battlegrounds" : "Toss-ups", color: "var(--accent)" },
-              { val: totalPolls, label: "Total Polls", color: "var(--text-primary)" },
-            ].map((s) => (
-              <div key={s.label} className="flex flex-col gap-0.5">
-                <span style={{ fontFamily: mono, fontSize: 24, fontWeight: 500, color: s.color, letterSpacing: "-0.02em" }}>{s.val}</span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{s.label}</span>
-              </div>
-            ))}
+        {/* Center — Map (Senate only) */}
+        {tab === "SENATE" && (
+          <div className="flex flex-col flex-1 min-w-0">
+            <SenateMap senateRaces={senateRaces} onStateClick={setSelectedRaceCode} />
           </div>
-        </div>
+        )}
+
+        {/* Right — Senate composition bar */}
+        {tab === "SENATE" && (
+          <div className="flex flex-col gap-2 justify-center" style={{ width: 280, flexShrink: 0 }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
+              Senate Composition
+            </span>
+            {(() => {
+              const dSafe = SEN_D_BASE;
+              const dUp = senateRaces.filter((r) => r.incumbent === "D" || (!r.incumbent && r.lean.includes("D"))).length;
+              const rUp = senateRaces.filter((r) => r.incumbent === "R" || (!r.incumbent && r.lean.includes("R"))).length;
+              const rSafe = SEN_R_BASE;
+              return (
+                <>
+                  <div className="flex overflow-hidden" style={{ height: 24, borderRadius: 5 }}>
+                    <div style={{ width: `${dSafe}%`, background: "var(--dem)" }} title={`${dSafe} Dem seats not up`} />
+                    <div style={{ width: `${dUp}%`, background: "var(--dem-light)", borderLeft: "1px solid var(--bg)" }} title={`${dUp} Dem seats up`} />
+                    <div style={{ width: `${rUp}%`, background: "var(--rep-light)", borderLeft: "1px solid var(--bg)" }} title={`${rUp} Rep seats up`} />
+                    <div style={{ width: `${rSafe}%`, background: "var(--rep)", borderLeft: "1px solid var(--bg)" }} title={`${rSafe} Rep seats not up`} />
+                  </div>
+                  <div className="flex justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <div style={{ width: 7, height: 7, borderRadius: 2, background: "var(--dem)" }} />
+                        <span style={{ fontFamily: mono, fontSize: 9, color: "var(--text-muted)" }}>{dSafe} safe</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div style={{ width: 7, height: 7, borderRadius: 2, background: "var(--dem-light)" }} />
+                        <span style={{ fontFamily: mono, fontSize: 9, color: "var(--text-muted)" }}>{dUp} up</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <div style={{ width: 7, height: 7, borderRadius: 2, background: "var(--rep-light)" }} />
+                        <span style={{ fontFamily: mono, fontSize: 9, color: "var(--text-muted)" }}>{rUp} up</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div style={{ width: 7, height: 7, borderRadius: 2, background: "var(--rep)" }} />
+                        <span style={{ fontFamily: mono, fontSize: 9, color: "var(--text-muted)" }}>{rSafe} safe</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden min-h-0">
         <div className="flex flex-col flex-1 overflow-hidden" style={{ borderRight: "1px solid var(--border)" }}>
           <div className="flex items-center px-10 shrink-0" style={{ height: 40, borderBottom: "1px solid var(--border)" }}>
-            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 160, flexShrink: 0 }}>
-              {tab === "SENATE" ? "Battleground Races" : "House Districts"}
-            </span>
+            {tab === "SENATE" ? (
+              <div style={{ width: 160, flexShrink: 0 }}>
+                <span
+                  onClick={() => { setShowAllRaces(!showAllRaces); setSortMode("alpha"); }}
+                  style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, cursor: "pointer", borderBottom: "1px dashed var(--text-faint)", paddingBottom: 1 }}
+                >
+                  {showAllRaces ? "All Races" : "Battleground Races"}
+                </span>
+              </div>
+            ) : (
+              <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, width: 160, flexShrink: 0 }}>
+                House Districts
+              </span>
+            )}
             <span style={{ fontSize: 11, color: "var(--text-faint)", width: 90, flexShrink: 0 }}>Rating</span>
             <span style={{ fontSize: 11, color: "var(--text-faint)", width: 140, flexShrink: 0 }}>Democrat</span>
             <span style={{ fontSize: 11, color: "var(--text-faint)", width: 140, flexShrink: 0 }}>Republican</span>
-            <span style={{ fontSize: 11, color: "var(--text-faint)", width: 75, flexShrink: 0, textAlign: "center" as const }}>'24 Pres</span>
-            <TrendHeader />
-            <span style={{ fontSize: 11, color: "var(--text-faint)", width: 55, flexShrink: 0, textAlign: "center" as const }}># Polls</span>
-            <span style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "right" as const, marginLeft: "auto" }}>Margin</span>
+            <span
+              onClick={() => setSortMode(sortMode === "pres24" ? "alpha" : "pres24")}
+              style={{ fontSize: 11, color: "var(--text-faint)", width: 75, flexShrink: 0, textAlign: "center" as const, cursor: "pointer", borderBottom: sortMode === "pres24" ? "1px solid var(--text-muted)" : "none" }}
+            >'24 Pres{sortMode === "pres24" ? " ↓" : ""}</span>
+            <TrendHeader active={sortMode === "trend"} onClick={() => setSortMode(sortMode === "trend" ? "alpha" : "trend")} />
+            <span
+              onClick={() => setSortMode(sortMode === "polls" ? "alpha" : "polls")}
+              style={{ fontSize: 11, color: "var(--text-faint)", width: 55, flexShrink: 0, textAlign: "center" as const, cursor: "pointer", borderBottom: sortMode === "polls" ? "1px solid var(--text-muted)" : "none" }}
+            ># Polls{sortMode === "polls" ? " ↓" : ""}</span>
+            <span
+              onClick={() => showAllRaces && setSortMode(sortMode === "margin" ? "alpha" : "margin")}
+              style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: "auto", paddingRight: 22, cursor: showAllRaces ? "pointer" : "default", borderBottom: showAllRaces && sortMode === "margin" ? "1px solid var(--text-muted)" : "none" }}
+            >
+              Margin{showAllRaces && sortMode === "margin" ? " ↓" : ""}
+            </span>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto hide-scrollbar">
             {tab === "SENATE"
               ? sortedSenate.map((race) => <SenateRaceRow key={race.stateCode} race={race} onClick={() => setSelectedRaceCode(race.stateCode)} />)
               : sortedHouse.map((race) => <HouseRaceRow key={race.district} race={race} />)
@@ -921,7 +1021,6 @@ function DashboardContent() {
               )}
             </div>
           </div>
-          <AllStatesGrid senateRaces={senateRaces} tab={tab} onSelect={setSelectedRaceCode} />
         </div>
       </div>
 

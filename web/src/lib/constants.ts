@@ -1,0 +1,83 @@
+/**
+ * Bellwether — All tunable constants in one place.
+ *
+ * Adjust these to change how the dashboard behaves.
+ */
+
+// ---------------------------------------------------------------------------
+// Senate seat baseline (non-contested seats from the 2024 election)
+// ---------------------------------------------------------------------------
+
+/** Dem seats NOT up for reelection in 2026 (includes 2 independents caucusing with Dems) */
+export const SEN_D_BASE = 34;
+
+/** Rep seats NOT up for reelection in 2026 (excludes FL + OH special elections) */
+export const SEN_R_BASE = 31;
+
+// ---------------------------------------------------------------------------
+// Battleground & matchup thresholds
+// ---------------------------------------------------------------------------
+
+/** Races within this margin (absolute value) are considered battlegrounds */
+export const BATTLEGROUND_MARGIN_THRESHOLD = 5;
+
+/** Minimum number of polls for a matchup to appear in the switcher */
+export const MATCHUP_MIN_POLLS = 5;
+
+// ---------------------------------------------------------------------------
+// Polling average weights
+// ---------------------------------------------------------------------------
+
+/** Half-life in days for recency decay. A poll's weight halves every N days. */
+export const RECENCY_HALF_LIFE_DAYS = 30;
+
+/** Weight multiplier per pollster grade (VoteHub) */
+export const GRADE_WEIGHTS: Record<string, number> = {
+  "A+": 5,
+  "A": 4,
+  "B": 3,
+  "C": 2,
+  "D": 1,
+};
+
+/** Weight for pollsters not in the VoteHub database */
+export const UNRATED_POLLSTER_WEIGHT = 2;
+
+// ---------------------------------------------------------------------------
+// Rating thresholds (derived from polling margin)
+// ---------------------------------------------------------------------------
+
+/** Margin thresholds for race ratings. All values are absolute. */
+export const RATING_THRESHOLDS = {
+  safe: 10,      // > 10: Safe D/R
+  likely: 6,     // 6–10: Likely D/R
+  lean: 2.5,     // 2.5–6: Lean D/R
+                  // < 2.5: Toss-Up
+};
+
+// ---------------------------------------------------------------------------
+// Independent candidates (treated as DEM in data but displayed differently)
+// ---------------------------------------------------------------------------
+
+/** Candidates who are technically Independent but aligned with a party.
+ *  These get special styling (independent colors) and a label noting their status. */
+export const INDEPENDENT_CANDIDATES: Record<string, { party: "DEM" | "REP"; note: string }> = {
+  "Osborn": { party: "DEM", note: "Running as Independent" },
+};
+
+/** Color for independent-aligned candidates */
+export const IND_COLOR = "#6B5B95";
+export const IND_COLOR_BG = "rgba(107,91,149,0.08)";
+
+// ---------------------------------------------------------------------------
+// Trend calculation
+// ---------------------------------------------------------------------------
+
+/** Minimum shift (absolute) to show a trend arrow. Below this = "—" */
+export const TREND_MIN_SHIFT = 0.1;
+
+/** Minimum number of polls required before showing a trend */
+export const TREND_MIN_POLLS = 5;
+
+/** Number of recent polls to compare against prior polls for trend */
+export const TREND_WINDOW = 3;

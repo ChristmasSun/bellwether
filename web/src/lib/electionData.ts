@@ -1,3 +1,14 @@
+import {
+  BATTLEGROUND_MARGIN_THRESHOLD,
+  MATCHUP_MIN_POLLS,
+  RECENCY_HALF_LIFE_DAYS,
+  GRADE_WEIGHTS,
+  UNRATED_POLLSTER_WEIGHT,
+  RATING_THRESHOLDS,
+} from "./constants";
+
+export { BATTLEGROUND_MARGIN_THRESHOLD, MATCHUP_MIN_POLLS } from "./constants";
+
 export type Party = "D" | "R" | "I";
 
 export const STATE_NAMES: Record<string, string> = {
@@ -33,8 +44,6 @@ export interface PollSample {
   grade?: string | null;
 }
 
-/** Minimum polls for a matchup to appear in the switcher. */
-export const MATCHUP_MIN_POLLS = 5;
 
 /**
  * Confirmed primary winners / nominees. When set, the matchup containing
@@ -235,40 +244,7 @@ export interface PollEntry {
 // Static reference data
 // ---------------------------------------------------------------------------
 
-// Approximate FEC fundraising totals ($M) for 2026 Senate candidates through Q4 2025.
-// Source: FEC public filings. Competitive/notable races only.
-// R figures reflect incumbent or primary frontrunner; D same.
-const FUNDRAISING_2026: Record<string, { dem: number; rep: number }> = {
-  GA: { dem: 18.4, rep:  3.8 }, // Ossoff (D-inc) vs TBD
-  NH: { dem:  5.9, rep:  4.2 }, // Open seat — Langone (D) vs Ayotte (R)
-  ME: { dem:  3.4, rep:  9.1 }, // Challenger vs Collins (R-inc)
-  MI: { dem:  4.8, rep:  2.9 }, // Open seat (Peters retiring)
-  NC: { dem:  4.1, rep:  7.6 }, // Challenger vs Tillis (R-inc)
-  CO: { dem:  8.3, rep:  1.9 }, // Hickenlooper (D-inc) vs challenger
-  IA: { dem:  1.8, rep:  6.2 }, // Challenger vs Ernst (R-inc)
-  VA: { dem:  6.5, rep:  1.3 }, // Warner (D-inc) vs challenger
-  TX: { dem:  3.7, rep:  9.4 }, // Challenger vs Cornyn (R-inc)
-  MN: { dem:  2.6, rep:  1.2 }, // Open seat (Smith retiring)
-  WV: { dem:  0.8, rep:  5.3 }, // Safe R (Justice)
-  AK: { dem:  1.1, rep:  4.7 }, // Safe R (Sullivan)
-  MA: { dem:  5.2, rep:  0.7 }, // Markey (D-inc)
-  DE: { dem:  2.1, rep:  0.4 }, // Coons (D-inc)
-  NJ: { dem:  4.3, rep:  1.1 }, // Booker (D-inc)
-};
 
-// 2022 midterm voter turnout (% of voting-eligible population) by state.
-// Source: U.S. Elections Project (Michael McDonald).
-const TURNOUT_2022: Record<string, number> = {
-  AK: 52.3, AL: 35.5, AR: 37.3, AZ: 53.4, CA: 45.9, CO: 63.2,
-  CT: 57.0, DE: 52.8, FL: 53.9, GA: 54.0, HI: 41.9, IA: 54.7,
-  ID: 47.7, IL: 51.3, IN: 40.4, KS: 48.0, KY: 42.3, LA: 36.8,
-  MA: 54.3, MD: 45.6, ME: 58.1, MI: 50.9, MN: 62.6, MO: 42.4,
-  MS: 37.4, MT: 57.8, NC: 50.0, ND: 43.3, NE: 53.2, NH: 57.2,
-  NJ: 47.1, NM: 51.2, NV: 48.4, NY: 47.1, OH: 49.8, OK: 39.7,
-  OR: 60.1, PA: 49.2, RI: 47.8, SC: 46.7, SD: 60.3, TN: 35.6,
-  TX: 44.5, UT: 44.3, VA: 49.5, VT: 58.7, WA: 58.9, WI: 55.2,
-  WV: 37.8, WY: 48.2,
-};
 
 // Recent statewide election results for states with 2026 Senate races.
 // Format: { label, margin (R positive), topline }
@@ -370,6 +346,72 @@ export const STATE_ELECTION_HISTORY: Record<string, StateElectionResult[]> = {
     { label: "2024 GOV", margin: 20.3, topline: "Gianforte 58.9 — Busse 38.6" },
     { label: "2020 PRES", margin: 16.4, topline: "Trump 56.9 — Biden 40.5" },
   ],
+  // States with 2024 presidential data only — verified from Ballotpedia
+  AR: [
+    { label: "2024 PRES", margin: 30.6, topline: "Trump 64.2 — Harris 33.6" },
+  ],
+  DE: [
+    { label: "2024 PRES", margin: -14.7, topline: "Trump 41.8 — Harris 56.5" },
+  ],
+  ID: [
+    { label: "2024 PRES", margin: 36.5, topline: "Trump 66.9 — Harris 30.4" },
+  ],
+  IL: [
+    { label: "2024 PRES", margin: -10.9, topline: "Trump 43.5 — Harris 54.4" },
+  ],
+  KS: [
+    { label: "2024 PRES", margin: 16.2, topline: "Trump 57.2 — Harris 41.0" },
+  ],
+  LA: [
+    { label: "2024 PRES", margin: 22.0, topline: "Trump 60.2 — Harris 38.2" },
+  ],
+  MD: [
+    { label: "2024 PRES", margin: -28.5, topline: "Trump 34.1 — Harris 62.6" },
+  ],
+  MS: [
+    { label: "2024 PRES", margin: 22.9, topline: "Trump 60.9 — Harris 38.0" },
+  ],
+  NE: [
+    { label: "2024 PRES", margin: 20.4, topline: "Trump 59.3 — Harris 38.9" },
+  ],
+  NJ: [
+    { label: "2024 PRES", margin: -5.9, topline: "Trump 46.1 — Harris 52.0" },
+  ],
+  NM: [
+    { label: "2024 PRES", margin: -6.0, topline: "Trump 45.9 — Harris 51.9" },
+  ],
+  OK: [
+    { label: "2024 PRES", margin: 34.3, topline: "Trump 66.2 — Harris 31.9" },
+  ],
+  OR: [
+    { label: "2024 PRES", margin: -14.3, topline: "Trump 41.0 — Harris 55.3" },
+  ],
+  RI: [
+    { label: "2024 PRES", margin: -13.7, topline: "Trump 41.8 — Harris 55.5" },
+  ],
+  SD: [
+    { label: "2024 PRES", margin: 29.2, topline: "Trump 63.4 — Harris 34.2" },
+  ],
+  WV: [
+    { label: "2024 PRES", margin: 41.9, topline: "Trump 70.0 — Harris 28.1" },
+  ],
+  WY: [
+    { label: "2024 PRES", margin: 45.8, topline: "Trump 71.6 — Harris 25.8" },
+  ],
+  AL: [
+    { label: "2024 PRES", margin: 30.5, topline: "Trump 64.6 — Harris 34.1" },
+  ],
+  TN: [
+    { label: "2024 PRES", margin: 29.7, topline: "Trump 64.2 — Harris 34.5" },
+  ],
+  OH: [
+    { label: "2024 PRES", margin: 11.2, topline: "Trump 55.1 — Harris 43.9" },
+    { label: "2024 SEN", margin: 6.3, topline: "Moreno 50.2 — Brown 43.9" },
+  ],
+  FL: [
+    { label: "2024 PRES", margin: 13.1, topline: "Trump 56.1 — Harris 43.0" },
+    { label: "2024 SEN", margin: 12.5, topline: "Scott 55.8 — Mucarsel-Powell 43.3" },
+  ],
 };
 
 // ---------------------------------------------------------------------------
@@ -409,12 +451,13 @@ function lastName(full: string): string {
 
 /** Derive a rating from the polling margin (D − R). */
 export function marginToLean(margin: number): Lean {
-  if (margin > 10) return "Safe D";
-  if (margin > 6) return "Likely D";
-  if (margin > 2.5) return "Lean D";
-  if (margin >= -2.5) return "Toss-Up";
-  if (margin >= -6) return "Lean R";
-  if (margin >= -10) return "Likely R";
+  const { safe, likely, lean } = RATING_THRESHOLDS;
+  if (margin > safe) return "Safe D";
+  if (margin > likely) return "Likely D";
+  if (margin > lean) return "Lean D";
+  if (margin >= -lean) return "Toss-Up";
+  if (margin >= -likely) return "Lean R";
+  if (margin >= -safe) return "Likely R";
   return "Safe R";
 }
 
@@ -441,8 +484,6 @@ function partyToIncumbent(p: string | null | undefined): Party | undefined {
   return undefined;
 }
 
-/** Races within this margin (absolute value) are considered battlegrounds. */
-export const BATTLEGROUND_MARGIN_THRESHOLD = 5;
 
 function isBattleground(margin: number, hasPolls: boolean): boolean {
   return hasPolls && Math.abs(margin) <= BATTLEGROUND_MARGIN_THRESHOLD;
@@ -525,25 +566,19 @@ export function transformSenateRace(
     }
   }
 
-  // Grade-based weight: A+=5, A=4, B=3, C=2, D=1, unrated=2
-  const gradeWeights: Record<string, number> = { "A+": 5, "A": 4, "B": 3, "C": 2, "D": 1 };
-
-  /** Half-life in days for recency decay. A poll's weight halves every this many days. */
-  const RECENCY_HALF_LIFE_DAYS = 30;
-
   function recencyWeight(endDate: string | undefined): number {
     if (!endDate) return 0.5;
     const daysAgo = (Date.now() - new Date(endDate).getTime()) / (1000 * 60 * 60 * 24);
     if (daysAgo < 0) return 1;
-    // Exponential decay: weight = 0.5 ^ (daysAgo / halfLife)
     return Math.pow(0.5, daysAgo / RECENCY_HALF_LIFE_DAYS);
   }
 
-  function pollWeight(pollster: string, endDate?: string): number {
+  function pollWeight(pollster: string, endDate?: string, completeness?: number): number {
     const rating = getPollsterRating(pollster);
-    const gradeW = rating ? (gradeWeights[rating.grade] ?? 2) : 2;
-    const recencyW = recencyWeight(endDate);
-    return gradeW * recencyW;
+    const gradeW = rating ? (GRADE_WEIGHTS[rating.grade] ?? UNRATED_POLLSTER_WEIGHT) : UNRATED_POLLSTER_WEIGHT;
+    // Completeness: D% + R% / 100. A poll with 48-24 (72% total) gets 0.72x weight.
+    const completenessW = completeness != null ? Math.min(completeness / 100, 1) : 1;
+    return gradeW * recencyWeight(endDate) * completenessW;
   }
 
   // Build Matchup objects for all groups with enough polls
@@ -555,26 +590,26 @@ export function transformSenateRace(
     let dPct = dFirst?.pct ?? 0;
     let rPct = rFirst?.pct ?? 0;
 
-    if (group.length > 1) {
-      // Weighted average: grade weight × recency decay × house effect adjustment
-      let dWeightedSum = 0, rWeightedSum = 0, totalWeight = 0;
-      for (const p of group) {
-        const d = p.results.find((r) => inferParty(r) === "DEM");
-        const r = p.results.find((r2) => inferParty(r2) === "REP");
-        if (d && r) {
-          const w = pollWeight(p.pollster, p.end_date);
-          const rating = getPollsterRating(p.pollster);
-          // Adjust for house effect: positive = R bias, so shift toward D
-          const houseAdj = rating?.houseEffect ?? 0;
-          dWeightedSum += (d.pct + houseAdj / 2) * w;
-          rWeightedSum += (r.pct - houseAdj / 2) * w;
-          totalWeight += w;
-        }
+    // Weighted average: grade weight × recency decay × house effect adjustment
+    // Applies even with 1 poll (for house effect correction)
+    let dWeightedSum = 0, rWeightedSum = 0, totalWeight = 0;
+    for (const p of group) {
+      const d = p.results.find((r) => inferParty(r) === "DEM");
+      const r = p.results.find((r2) => inferParty(r2) === "REP");
+      if (d && r) {
+        const completeness = d.pct + r.pct;
+        const w = pollWeight(p.pollster, p.end_date, completeness);
+        const rating = getPollsterRating(p.pollster);
+        // Adjust for house effect: positive = R bias, so shift toward D
+        const houseAdj = rating?.houseEffect ?? 0;
+        dWeightedSum += (d.pct + houseAdj / 2) * w;
+        rWeightedSum += (r.pct - houseAdj / 2) * w;
+        totalWeight += w;
       }
-      if (totalWeight > 0) {
-        dPct = Math.round((dWeightedSum / totalWeight) * 10) / 10;
-        rPct = Math.round((rWeightedSum / totalWeight) * 10) / 10;
-      }
+    }
+    if (totalWeight > 0) {
+      dPct = Math.round((dWeightedSum / totalWeight) * 10) / 10;
+      rPct = Math.round((rWeightedSum / totalWeight) * 10) / 10;
     }
 
     const margin = Math.round((dPct - rPct) * 10) / 10;
@@ -586,7 +621,11 @@ export function transformSenateRace(
         const d = p.results.find((r) => inferParty(r) === "DEM");
         const r = p.results.find((r2) => inferParty(r2) === "REP");
         return {
-          date: new Date(p.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          date: (() => {
+            const d = new Date(p.end_date);
+            const base = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            return d.getFullYear() < new Date().getFullYear() ? base + " (" + d.getFullYear() + ")" : base;
+          })(),
           dem: d?.pct ?? 0,
           rep: r?.pct ?? 0,
           pollster: p.pollster,
@@ -658,7 +697,7 @@ export function transformSenateRace(
   const pollingSamples = best?.pollingSamples ?? [];
   const latestPollDate = best?.latestPollDate;
 
-  // Fundraising: use FEC API data if available, fallback to static
+  // Fundraising: from FEC API only (no hardcoded fallback)
   let fundraising: { dem: number; rep: number } | undefined;
   if (fecCandidates && fecCandidates.length > 0) {
     const demFec = fecCandidates.filter((c: any) => c.party === "DEM").sort((a: any, b: any) => b.receipts - a.receipts)[0];
@@ -670,12 +709,6 @@ export function transformSenateRace(
       };
     }
   }
-  if (!fundraising) {
-    fundraising = FUNDRAISING_2026[race.state_abbr];
-  }
-
-  // Turnout: 2022 midterm VEP turnout for this state
-  const turnout = TURNOUT_2022[race.state_abbr];
 
   // Events/week: proxy from polls published in the last 14 days
   const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
@@ -704,10 +737,9 @@ export function transformSenateRace(
     called,
     winner,
     pollingSamples,
-    pollCount: best?.pollCount ?? uniqueCount,
+    pollCount: best?.pollCount ?? 0,
     key: isBattleground(demPct - repPct, demPct > 0 && repPct > 0),
     ...(fundraising && { moneyRaised: fundraising }),
-    ...(turnout !== undefined && { turnout }),
     eventsThisWeek,
     latestPollDate,
     matchups,
@@ -867,9 +899,16 @@ export function computeSeatBalance(
   houseRaces: HouseRace[],
 ) {
   let sTossUp = 0;
+  let sTossDem = 0, sTossRep = 0;
   let sLeanD = 0, sLeanR = 0, sLikelyD = 0, sLikelyR = 0, sSafeD = 0, sSafeR = 0;
   for (const r of senateRaces) {
-    if (r.lean === "Toss-Up") sTossUp++;
+    if (r.lean === "Toss-Up") {
+      sTossUp++;
+      // Assign toss-up to whoever is actually leading
+      if (r.margin > 0) sTossDem++;
+      else if (r.margin < 0) sTossRep++;
+      else sTossRep++; // exact ties go to R (party holding tiebreaker via VP)
+    }
     else if (r.lean === "Lean D") sLeanD++;
     else if (r.lean === "Lean R") sLeanR++;
     else if (r.lean === "Likely D") sLikelyD++;
@@ -878,12 +917,16 @@ export function computeSeatBalance(
     else if (r.lean === "Safe R") sSafeR++;
   }
 
-  const sDemProjected = sSafeD + sLikelyD + sLeanD;
-  const sRepProjected = sSafeR + sLikelyR + sLeanR;
+  const sDemProjected = sSafeD + sLikelyD + sLeanD + sTossDem;
+  const sRepProjected = sSafeR + sLikelyR + sLeanR + sTossRep;
 
   let hDemProj = 0, hRepProj = 0, hTossUp = 0;
   for (const r of houseRaces) {
-    if (r.lean === "Toss-Up") hTossUp++;
+    if (r.lean === "Toss-Up") {
+      hTossUp++;
+      if (r.demPct > r.repPct) hDemProj++;
+      else hRepProj++;
+    }
     else if (r.lean === "Safe D" || r.lean === "Likely D" || r.lean === "Lean D") hDemProj++;
     else hRepProj++;
   }

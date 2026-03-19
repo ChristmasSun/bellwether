@@ -39,7 +39,7 @@ _cache: dict = {
     "meta": {"last_senate_refresh": None, "last_house_refresh": None, "last_fec_refresh": None},
 }
 
-REFRESH_INTERVAL_HOURS = 4
+from api.constants import POLL_REFRESH_INTERVAL_HOURS as REFRESH_INTERVAL_HOURS
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +203,7 @@ async def refresh_fec():
     logger.info(f"FEC refresh done: {len(_cache['fec'])} states with data")
 
 
-FEC_REFRESH_INTERVAL_HOURS = 24
+from api.constants import FEC_REFRESH_INTERVAL_HOURS
 
 
 async def _periodic_refresh():
