@@ -671,11 +671,49 @@ export function transformSenateRace(
     };
   }
 
-  // Build all matchups, sorted by poll count descending
+  // Compute primary leaders (if primary polling exists) for tiebreaking
+  const primaryLeader: Record<string, string> = {}; // party → leading candidate last name
+  {
+    const pPolls = polls.filter((p) => {
+      if (p.end_date && new Date(p.end_date).getFullYear() < 2026) return false;
+      const parties = new Set(p.results.filter((r) => r.pct > 0).map((r) => inferParty(r)));
+      return parties.size === 1 && p.results.filter((r) => r.pct > 0).length >= 2
+        && (parties.has("DEM") || parties.has("REP"));
+    });
+    const partyTotals: Record<string, Record<string, { weightedSum: number; totalWeight: number }>> = {};
+    for (const p of pPolls) {
+      const candidates = p.results.filter((r) => r.pct > 0);
+      const party = inferParty(candidates[0]);
+      if (!partyTotals[party]) partyTotals[party] = {};
+      const w = pollWeight(p.pollster, p.end_date, undefined);
+      for (const r of candidates) {
+        const name = lastName(r.candidate);
+        if (!partyTotals[party][name]) partyTotals[party][name] = { weightedSum: 0, totalWeight: 0 };
+        partyTotals[party][name].weightedSum += r.pct * w;
+        partyTotals[party][name].totalWeight += w;
+      }
+    }
+    for (const [party, candidates] of Object.entries(partyTotals)) {
+      const sorted = Object.entries(candidates).sort((a, b) =>
+        (b[1].weightedSum / b[1].totalWeight) - (a[1].weightedSum / a[1].totalWeight)
+      );
+      if (sorted.length >= 2) primaryLeader[party] = sorted[0][0];
+    }
+  }
+
+  // Build all matchups, sorted by poll count descending (primary leader as tiebreaker)
   const allMatchups: Matchup[] = Object.values(matchupGroups)
     .filter((group) => group.length >= 1)
     .map(buildMatchup)
-    .sort((a, b) => b.pollCount - a.pollCount);
+    .sort((a, b) => {
+      if (b.pollCount !== a.pollCount) return b.pollCount - a.pollCount;
+      // Tiebreak: prefer matchup containing the primary leader(s)
+      const aScore = (primaryLeader["DEM"] && a.demCandidate.toLowerCase() === primaryLeader["DEM"].toLowerCase() ? 1 : 0)
+        + (primaryLeader["REP"] && a.repCandidate.toLowerCase() === primaryLeader["REP"].toLowerCase() ? 1 : 0);
+      const bScore = (primaryLeader["DEM"] && b.demCandidate.toLowerCase() === primaryLeader["DEM"].toLowerCase() ? 1 : 0)
+        + (primaryLeader["REP"] && b.repCandidate.toLowerCase() === primaryLeader["REP"].toLowerCase() ? 1 : 0);
+      return bScore - aScore;
+    });
 
   // The "switchable" matchups are those with >= MATCHUP_MIN_POLLS
   const switchableMatchups = allMatchups.filter((m) => m.pollCount >= MATCHUP_MIN_POLLS);
