@@ -47,6 +47,9 @@ export const UNRATED_POLLSTER_WEIGHT = 2;
 // National environment adjustment for House projections
 // ---------------------------------------------------------------------------
 
+/** 2024 national House popular vote margin (D − R). R+2.6 → −2.6. */
+export const HOUSE_2024_NATIONAL_MARGIN = -2.6;
+
 /** Expected national D−R environment shift for 2026 midterm (positive = D).
  *  Applied when projecting unpolled House seats. Fallback if no generic ballot data. */
 export const HOUSE_NATIONAL_ENVIRONMENT = 2.0;

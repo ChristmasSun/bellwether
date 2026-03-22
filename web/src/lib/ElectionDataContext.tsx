@@ -24,7 +24,7 @@ import {
   generateNewsItems,
   computeSeatBalance,
 } from "./electionData";
-import { HOUSE_NATIONAL_ENVIRONMENT, POLLS_FOR_FULL_WEIGHT, RECENT_POLL_DAYS } from "./constants";
+import { HOUSE_2024_NATIONAL_MARGIN, HOUSE_NATIONAL_ENVIRONMENT, POLLS_FOR_FULL_WEIGHT, RECENT_POLL_DAYS } from "./constants";
 import { DISTRICT_PRES_2024 } from "./districtPres2024";
 import { DISTRICT_HOUSE_2024 } from "./districtHouse2024";
 
@@ -184,7 +184,9 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
       const genericBallotAverage: GenericBallotAverage | null = rawGBAvg.average ?? null;
 
       // Use live generic ballot margin for House environment shift, fall back to constant
-      const envShift = genericBallotAverage?.margin ?? HOUSE_NATIONAL_ENVIRONMENT;
+      // Shift is relative to 2024 national environment (R+2.6 → -2.6 in D-positive terms)
+      const rawEnv = genericBallotAverage?.margin ?? HOUSE_NATIONAL_ENVIRONMENT;
+      const envShift = rawEnv - HOUSE_2024_NATIONAL_MARGIN;
 
       // Add remaining districts (no polls) from presidential data
       const polledDistricts = new Set(houseRaces.map((r) => r.district));
