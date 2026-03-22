@@ -4,6 +4,7 @@ import { ElectionDataProvider, useElectionData } from "@/lib/ElectionDataContext
 import { type SenateRace, type HouseRace, type Matchup, type PrimaryMatchup, type PrimaryPollSample, STATE_NAMES, BATTLEGROUND_MARGIN_THRESHOLD, STATE_ELECTION_HISTORY, MATCHUP_MIN_POLLS, type StateElectionResult } from "@/lib/electionData";
 import { SEN_D_BASE, SEN_R_BASE, TREND_MIN_SHIFT, TREND_MIN_POLLS, TREND_WINDOW, INDEPENDENT_CANDIDATES, IND_COLOR } from "@/lib/constants";
 import { DISTRICT_PRES_2024 } from "@/lib/districtPres2024";
+import { DISTRICT_HOUSE_2024 } from "@/lib/districtHouse2024";
 import { RefreshCw, ArrowLeft } from "lucide-react";
 import { LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from "recharts";
 import dynamic from "next/dynamic";
@@ -1278,6 +1279,7 @@ function HouseDetailView({ race, onBack, lastRefresh, mobile }: { race: HouseRac
                 <div className="flex flex-wrap gap-x-8 gap-y-3">
                   {[
                     { label: "Rating", value: race.lean },
+                    { label: "'24 House", value: (() => { const m = DISTRICT_HOUSE_2024[race.district]; if (m == null) return "—"; return m > 0 ? `R+${m.toFixed(1)}` : m < 0 ? `D+${Math.abs(m).toFixed(1)}` : "EVEN"; })(), color: (() => { const m = DISTRICT_HOUSE_2024[race.district]; if (m == null) return undefined; return m > 0 ? "var(--rep)" : "var(--dem)"; })() },
                     { label: "'24 Pres", value: (() => { const b = districtPresBaseline(race.district); return b ? b.label : "—"; })(), color: (() => { const b = districtPresBaseline(race.district); return b?.color; })() },
                     { label: "Polls", value: String(race.pollCount) },
                     ...(race.latestPollDate ? [{ label: "Latest Poll", value: race.latestPollDate }] : []),
@@ -1601,8 +1603,10 @@ function DashboardContent() {
 
   const sidebarPolls = recentPolls
     .filter((p) => {
-      // Filter by active tab
+      // Filter by active tab — exclude generic ballot from Senate/House sidebar
       const isHouse = p.pollType?.toLowerCase().includes("house");
+      const isGenericBallot = p.pollType?.toLowerCase().includes("generic");
+      if (isGenericBallot) return false;
       if (tab === "HOUSE" && !isHouse) return false;
       if (tab === "SENATE" && isHouse) return false;
       // Only show polls with both a named DEM and REP candidate with real percentages

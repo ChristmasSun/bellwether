@@ -537,19 +537,55 @@ def _polls_to_records(polls: list[dict]) -> list[PollRecord]:
     return records
 
 
+def _last_name(name: str) -> str:
+    """Extract last name from a candidate name like 'Peggy Flanagan (DFL)'."""
+    import re
+    clean = re.sub(r"\s*\(.*?\)\s*", "", name).strip()
+    parts = clean.split()
+    return parts[-1] if parts else clean
+
+
+def _matchup_key(poll: dict) -> str | None:
+    """Get a 'DemLastName vs RepLastName' key for a poll's candidate matchup."""
+    results = poll.get("results", [])
+    dem_names = []
+    rep_names = []
+    for r in results:
+        party = (r.get("party") or "").upper()
+        if party in ("DEM", "D", "DFL"):
+            dem_names.append(_last_name(r.get("candidate", "")))
+        elif party in ("REP", "R", "GOP"):
+            rep_names.append(_last_name(r.get("candidate", "")))
+    if not dem_names or not rep_names:
+        return None
+    return f"{sorted(dem_names)[0]} vs {sorted(rep_names)[0]}"
+
+
 @app.get("/api/v1/senate/aggregates/all")
 async def get_all_senate_aggregates():
-    """Compute weighted polling aggregates for all Senate races."""
+    """Compute weighted polling aggregates per matchup for all Senate races."""
     result = {}
     for state, polls in _cache["senate_polls"].items():
         if not polls:
             continue
-        records = _polls_to_records(polls)
-        if not records:
-            continue
-        agg = aggregate_polls(records)
-        if agg["polls_included"] > 0:
-            result[state] = agg
+        # Group polls by matchup (candidate pair)
+        by_matchup: dict[str, list] = {}
+        for p in polls:
+            key = _matchup_key(p)
+            if key:
+                by_matchup.setdefault(key, []).append(p)
+
+        matchup_aggs = {}
+        for matchup_name, matchup_polls in by_matchup.items():
+            records = _polls_to_records(matchup_polls)
+            if not records:
+                continue
+            agg = aggregate_polls(records)
+            if agg["polls_included"] > 0:
+                matchup_aggs[matchup_name] = agg
+
+        if matchup_aggs:
+            result[state] = matchup_aggs
     return result
 
 

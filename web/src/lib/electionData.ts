@@ -565,7 +565,7 @@ export function transformSenateRace(
   polls: ApiPoll[],
   uniqueCount: number,
   fecCandidates?: any[],
-  weightedAggregate?: { results: { candidate: string; party: string; pct: number }[]; polls_included: number },
+  weightedAggregates?: Record<string, { results: { candidate: string; party: string; pct: number }[]; polls_included: number }>,
 ): SenateRace {
   // lean will be set from polling margin below; Cook is fallback only
 
@@ -877,12 +877,36 @@ export function transformSenateRace(
     if (primaryMatchups.length === 0) primaryMatchups = undefined;
   }
 
-  // Override with engine-computed weighted aggregate if available
-  if (weightedAggregate && weightedAggregate.polls_included > 0) {
-    const aggDem = weightedAggregate.results.find((r: any) => r.party === "DEM" || r.party === "D");
-    const aggRep = weightedAggregate.results.find((r: any) => r.party === "REP" || r.party === "R");
-    if (aggDem) demPct = aggDem.pct;
-    if (aggRep) repPct = aggRep.pct;
+  // Override with engine-computed per-matchup weighted aggregate if available
+  if (weightedAggregates) {
+    // Find the aggregate matching the best matchup's candidates
+    for (const [key, agg] of Object.entries(weightedAggregates)) {
+      if (agg.polls_included > 0 &&
+          key.toLowerCase().includes(demCandidate.toLowerCase()) &&
+          key.toLowerCase().includes(repCandidate.toLowerCase())) {
+        const aggDem = agg.results.find((r: any) => (r.party === "DEM" || r.party === "D") && r.candidate.toLowerCase().includes(demCandidate.toLowerCase()));
+        const aggRep = agg.results.find((r: any) => (r.party === "REP" || r.party === "R") && r.candidate.toLowerCase().includes(repCandidate.toLowerCase()));
+        if (aggDem) demPct = aggDem.pct;
+        if (aggRep) repPct = aggRep.pct;
+        break;
+      }
+    }
+    // Also override each matchup's demPct/repPct
+    for (const m of matchups) {
+      for (const [key, agg] of Object.entries(weightedAggregates)) {
+        if (agg.polls_included > 0 &&
+            key.toLowerCase().includes(m.demCandidate.toLowerCase()) &&
+            key.toLowerCase().includes(m.repCandidate.toLowerCase())) {
+          const aggDem = agg.results.find((r: any) => (r.party === "DEM" || r.party === "D") && r.candidate.toLowerCase().includes(m.demCandidate.toLowerCase()));
+          const aggRep = agg.results.find((r: any) => (r.party === "REP" || r.party === "R") && r.candidate.toLowerCase().includes(m.repCandidate.toLowerCase()));
+          if (aggDem) m.demPct = aggDem.pct;
+          if (aggRep) m.repPct = aggRep.pct;
+          m.margin = Math.round((m.demPct - m.repPct) * 10) / 10;
+          m.lean = marginToLean(m.margin);
+          break;
+        }
+      }
+    }
   }
 
   return {

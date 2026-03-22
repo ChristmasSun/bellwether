@@ -101,7 +101,7 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
       const [rawRaces, rawHouseDistricts, rawRecentPolls, rawFec, rawGBPolls, rawGBAvg, rawSenAggs, rawHouseAggs] = await Promise.all([
         apiGet<any[]>("/senate/races"),
         apiGet<any[]>("/house/races?limit=1000"),
-        apiGet<{ polls: any[]; count: number }>("/polls/search?days=60&limit=50"),
+        apiGet<{ polls: any[]; count: number }>("/polls/search?days=60&limit=500"),
         apiGet<Record<string, any[]>>("/fec").catch(() => ({} as Record<string, any[]>)),
         apiGet<{ polls: any[] }>("/generic-ballot/polls").catch(() => ({ polls: [] })),
         apiGet<{ average: any; poll_count: number }>("/generic-ballot/average").catch(() => ({ average: null, poll_count: 0 })),
@@ -237,8 +237,9 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
           // In polled set but no general election data — use 2024 baseline + env shift
           r.projectedMargin = prior;
           r.margin = prior;
-          r.lean = marginToLean(prior);
         }
+        // Always set lean from projectedMargin so rating matches displayed margin
+        r.lean = marginToLean(r.projectedMargin);
       }
 
       const recentPolls = (rawRecentPolls.polls || []).map(transformRecentPoll);
