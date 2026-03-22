@@ -565,6 +565,7 @@ export function transformSenateRace(
   polls: ApiPoll[],
   uniqueCount: number,
   fecCandidates?: any[],
+  weightedAggregate?: { results: { candidate: string; party: string; pct: number }[]; polls_included: number },
 ): SenateRace {
   // lean will be set from polling margin below; Cook is fallback only
 
@@ -876,6 +877,14 @@ export function transformSenateRace(
     if (primaryMatchups.length === 0) primaryMatchups = undefined;
   }
 
+  // Override with engine-computed weighted aggregate if available
+  if (weightedAggregate && weightedAggregate.polls_included > 0) {
+    const aggDem = weightedAggregate.results.find((r: any) => r.party === "DEM" || r.party === "D");
+    const aggRep = weightedAggregate.results.find((r: any) => r.party === "REP" || r.party === "R");
+    if (aggDem) demPct = aggDem.pct;
+    if (aggRep) repPct = aggRep.pct;
+  }
+
   return {
     state: race.state,
     stateCode: race.state_abbr,
@@ -910,6 +919,7 @@ export function transformSenateRace(
 export function transformHouseRace(
   district: ApiHouseDistrict,
   polls: ApiPoll[],
+  weightedAggregate?: { results: { candidate: string; party: string; pct: number }[]; polls_included: number },
 ): HouseRace {
   const parts = district.district.split("-");
   const stateCode = parts[0] || "";
@@ -973,6 +983,15 @@ export function transformHouseRace(
         });
       }
     }
+  }
+
+  // Override with engine-computed weighted aggregate if available
+  if (weightedAggregate && weightedAggregate.polls_included > 0) {
+    const aggDem = weightedAggregate.results.find((r: any) => r.party === "DEM" || r.party === "D");
+    const aggRep = weightedAggregate.results.find((r: any) => r.party === "REP" || r.party === "R");
+    if (aggDem) demPct = aggDem.pct;
+    if (aggRep) repPct = aggRep.pct;
+    lean = marginToLean(demPct - repPct);
   }
 
   return {

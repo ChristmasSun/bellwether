@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.scrapers.wikipedia import fetch_all_wikipedia
 from api.scrapers.wikipedia_house import fetch_all_house_wikipedia, STATE_ABBR
+from api.aggregator.engine import PollRecord, aggregate_polls
 from api.data.senate_races_2026 import SENATE_RACES_2026
 
 logging.basicConfig(level=logging.INFO)
@@ -511,6 +512,67 @@ async def search_polls(days: int = 60, limit: int = 50):
 
     all_polls.sort(key=lambda p: p.get("end_date", ""), reverse=True)
     return {"polls": all_polls[:limit], "count": len(all_polls)}
+
+
+def _polls_to_records(polls: list[dict]) -> list[PollRecord]:
+    """Convert cached poll dicts to PollRecord objects for the aggregation engine."""
+    records = []
+    for p in polls:
+        end_str = p.get("poll_date_end", "")
+        if not end_str:
+            continue
+        try:
+            end_date = datetime.fromisoformat(end_str) if isinstance(end_str, str) else end_str
+        except (ValueError, TypeError):
+            continue
+        records.append(PollRecord(
+            pollster=p.get("pollster_name", ""),
+            end_date=end_date,
+            sample_size=p.get("sample_size"),
+            population=p.get("population"),
+            results=p.get("results", []),
+            is_partisan=p.get("is_partisan", False),
+            partisan_lean=p.get("partisan_lean", ""),
+        ))
+    return records
+
+
+@app.get("/api/v1/senate/aggregates/all")
+async def get_all_senate_aggregates():
+    """Compute weighted polling aggregates for all Senate races."""
+    result = {}
+    for state, polls in _cache["senate_polls"].items():
+        if not polls:
+            continue
+        records = _polls_to_records(polls)
+        if not records:
+            continue
+        agg = aggregate_polls(records)
+        if agg["polls_included"] > 0:
+            result[state] = agg
+    return result
+
+
+@app.get("/api/v1/house/aggregates/all")
+async def get_all_house_aggregates():
+    """Compute weighted polling aggregates for all House districts."""
+    # Group polls by district
+    by_district: dict[str, list] = {}
+    for state, polls in _cache["house_polls"].items():
+        for p in polls:
+            district = p.get("raw_data", {}).get("district") or p.get("subject", "").replace(" House", "")
+            if district:
+                by_district.setdefault(district, []).append(p)
+
+    result = {}
+    for district, polls in by_district.items():
+        records = _polls_to_records(polls)
+        if not records:
+            continue
+        agg = aggregate_polls(records)
+        if agg["polls_included"] > 0:
+            result[district] = agg
+    return result
 
 
 @app.get("/api/v1/generic-ballot/polls")

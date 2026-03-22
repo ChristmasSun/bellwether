@@ -98,14 +98,18 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
     setData((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
-      const [rawRaces, rawHouseDistricts, rawRecentPolls, rawFec, rawGBPolls, rawGBAvg] = await Promise.all([
+      const [rawRaces, rawHouseDistricts, rawRecentPolls, rawFec, rawGBPolls, rawGBAvg, rawSenAggs, rawHouseAggs] = await Promise.all([
         apiGet<any[]>("/senate/races"),
         apiGet<any[]>("/house/races?limit=1000"),
         apiGet<{ polls: any[]; count: number }>("/polls/search?days=60&limit=50"),
         apiGet<Record<string, any[]>>("/fec").catch(() => ({} as Record<string, any[]>)),
         apiGet<{ polls: any[] }>("/generic-ballot/polls").catch(() => ({ polls: [] })),
         apiGet<{ average: any; poll_count: number }>("/generic-ballot/average").catch(() => ({ average: null, poll_count: 0 })),
+        apiGet<Record<string, any>>("/senate/aggregates/all").catch(() => ({} as Record<string, any>)),
+        apiGet<Record<string, any>>("/house/aggregates/all").catch(() => ({} as Record<string, any>)),
       ]);
+      const senateAggregates: Record<string, any> = rawSenAggs ?? {};
+      const houseAggregates: Record<string, any> = rawHouseAggs ?? {};
 
       const races: any[] = Array.isArray(rawRaces) ? rawRaces : [];
       const houseDistricts: any[] = Array.isArray(rawHouseDistricts) ? rawHouseDistricts : [];
@@ -129,9 +133,10 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
                 pollData.polls || [],
                 pollData.unique_count ?? (pollData.polls || []).length,
                 fecData[race.state_abbr],
+                senateAggregates[race.state],
               );
             } catch {
-              return transformSenateRace(race, [], 0, fecData[race.state_abbr]);
+              return transformSenateRace(race, [], 0, fecData[race.state_abbr], senateAggregates[race.state]);
             }
           })
         );
@@ -153,9 +158,9 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
               const pollData = await apiGet<{ polls: any[] }>(
                 `/house/races/${encodeURIComponent(d.district)}/polls?limit=50`
               );
-              return transformHouseRace(d, pollData.polls || []);
+              return transformHouseRace(d, pollData.polls || [], houseAggregates[d.district]);
             } catch {
-              return transformHouseRace(d, []);
+              return transformHouseRace(d, [], houseAggregates[d.district]);
             }
           })
         );
