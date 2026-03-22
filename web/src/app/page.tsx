@@ -322,7 +322,12 @@ function HouseRaceRow({ race, mobile, onClick }: { race: HouseRace; mobile?: boo
             <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>{race.district}</span>
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{race.lean}</span>
           </div>
-          <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600, color: marginColor(margin) }}>
+          <span style={{
+            fontFamily: mono, fontSize: 12, fontWeight: 700, letterSpacing: "0.02em",
+            color: "#fff",
+            background: margin > 0 ? "var(--dem)" : margin < 0 ? "var(--rep)" : "var(--tossup-text)",
+            padding: "3px 8px", borderRadius: 4,
+          }}>
             {marginLabel(margin)}
           </span>
         </div>
@@ -375,9 +380,16 @@ function HouseRaceRow({ race, mobile, onClick }: { race: HouseRace; mobile?: boo
           {race.pollCount > 0 ? race.pollCount : "—"}
         </span>
       </div>
-      <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 600, color: marginColor(margin), marginLeft: "auto" }}>
-        {marginLabel(margin)}
-      </span>
+      <div className="flex items-center justify-end" style={{ marginLeft: "auto" }}>
+        <span style={{
+          fontFamily: mono, fontSize: 13, fontWeight: 700, letterSpacing: "0.02em",
+          color: "#fff",
+          background: margin > 0 ? "var(--dem)" : margin < 0 ? "var(--rep)" : "var(--tossup-text)",
+          padding: "4px 10px", borderRadius: 5,
+        }}>
+          {marginLabel(margin)}
+        </span>
+      </div>
     </div>
   );
 }
@@ -1572,7 +1584,7 @@ function DashboardContent() {
         }
         return Math.abs(a.margin) - Math.abs(b.margin);
       });
-  const competitiveHouse = houseRaces.filter((r) => (r.demPct > 0 || r.repPct > 0) && Math.abs(r.margin) <= BATTLEGROUND_MARGIN_THRESHOLD);
+  const competitiveHouse = houseRaces.filter((r) => (r.demPct > 0 || r.repPct > 0) && Math.abs(r.projectedMargin) <= BATTLEGROUND_MARGIN_THRESHOLD);
   const sortedHouse = (showAllRaces ? [...houseRaces] : competitiveHouse).sort((a, b) => {
     const aHas = a.demPct > 0 || a.repPct > 0;
     const bHas = b.demPct > 0 || b.repPct > 0;
@@ -1587,8 +1599,7 @@ function DashboardContent() {
       return 0;
     }
     if (sortMode === "polls") return b.pollCount - a.pollCount;
-    if (sortMode === "margin") return Math.abs(a.margin) - Math.abs(b.margin);
-    return Math.abs(a.margin) - Math.abs(b.margin);
+    return Math.abs(a.projectedMargin) - Math.abs(b.projectedMargin);
   });
 
   // --- National tab: Generic Ballot view ---
