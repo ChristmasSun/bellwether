@@ -29,7 +29,8 @@ def _parse_date(date_str: str) -> tuple[Optional[datetime], Optional[datetime]]:
     if not date_str or date_str == "--":
         return None, None
 
-    year = datetime.now().year
+    now = datetime.now()
+    year = now.year
     parts = re.split(r"\s*[-–—]\s*", date_str)
 
     def parse_single(s: str) -> Optional[datetime]:
@@ -37,7 +38,11 @@ def _parse_date(date_str: str) -> tuple[Optional[datetime], Optional[datetime]]:
         try:
             d = s.split("/")
             if len(d) == 2:
-                return datetime(year, int(d[0]), int(d[1]))
+                dt = datetime(year, int(d[0]), int(d[1]))
+                # If date is in the future, it's from last year
+                if dt > now:
+                    dt = dt.replace(year=year - 1)
+                return dt
             elif len(d) == 3:
                 y = int(d[2])
                 if y < 100:
