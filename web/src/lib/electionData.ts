@@ -122,11 +122,15 @@ export interface HouseRace {
   repCandidate: string;
   demPct: number;
   repPct: number;
+  margin: number;
+  projectedMargin: number;
   lean: Lean;
   winner?: Party;
   called: boolean;
   incumbent?: Party;
   pollCount: number;
+  pollingSamples: PollSample[];
+  latestPollDate?: string;
 }
 
 // Pollster ratings from VoteHub (https://votehub.com)
@@ -921,6 +925,9 @@ export function transformHouseRace(
     return parties.has("DEM") && parties.has("REP");
   });
 
+  const pollingSamples: PollSample[] = [];
+  let latestPollDate: string | undefined;
+
   if (generalPolls.length > 0) {
     let dSum = 0, rSum = 0, n = 0;
     for (const p of generalPolls) {
@@ -944,6 +951,28 @@ export function transformHouseRace(
     if (rR) repCandidate = lastName(rR.candidate);
 
     lean = marginToLean(demPct - repPct);
+
+    latestPollDate = latest.end_date
+      ? new Date(latest.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : undefined;
+
+    for (const p of [...generalPolls].reverse()) {
+      const d = p.results.find((r) => inferParty(r) === "DEM");
+      const r = p.results.find((r2) => inferParty(r2) === "REP");
+      if (d && r && p.end_date) {
+        const dt = new Date(p.end_date);
+        const base = dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        pollingSamples.push({
+          date: dt.getFullYear() < new Date().getFullYear() ? base + " (" + dt.getFullYear() + ")" : base,
+          dem: d.pct,
+          rep: r.pct,
+          pollster: p.pollster,
+          sampleSize: p.sample_size,
+          population: p.population?.toUpperCase(),
+          grade: p.pollster ? getPollsterGrade(p.pollster) : null,
+        });
+      }
+    }
   }
 
   return {
@@ -954,9 +983,13 @@ export function transformHouseRace(
     repCandidate,
     demPct,
     repPct,
+    margin: demPct - repPct,
+    projectedMargin: demPct - repPct,
     lean,
     called: false,
     pollCount: district.poll_count,
+    pollingSamples,
+    latestPollDate,
   };
 }
 
@@ -1072,14 +1105,18 @@ export function computeSeatBalance(
 
   let hDemProj = 0, hRepProj = 0, hTossUp = 0;
   for (const r of houseRaces) {
-    if (r.lean === "Toss-Up") {
+    const pm = r.projectedMargin;
+    const projLean = marginToLean(pm);
+    if (projLean === "Toss-Up") {
       hTossUp++;
-      if (r.demPct > r.repPct) hDemProj++;
+      if (pm > 0) hDemProj++;
+      else if (pm < 0) hRepProj++;
       else hRepProj++;
     }
-    else if (r.lean === "Safe D" || r.lean === "Likely D" || r.lean === "Lean D") hDemProj++;
+    else if (projLean === "Safe D" || projLean === "Likely D" || projLean === "Lean D") hDemProj++;
     else hRepProj++;
   }
+
 
   return {
     senate: {

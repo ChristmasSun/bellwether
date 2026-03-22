@@ -288,9 +288,16 @@ async def _run_wikipedia_refresh(log_id: int, state_filter: str = None):
     wiki_results = await fetch_all_wikipedia(states)
 
     added = 0
+    updated = 0
     errors = []
 
-    # Process each state: fetch existing IDs first, then bulk-insert new ones
+    # Fields to compare for updates
+    _POLL_FIELDS = [
+        "pollster_name", "poll_date_start", "poll_date_end",
+        "sample_size", "population", "results",
+    ]
+
+    # Process each state: fetch existing polls, upsert
     for state_name, polls_data in wiki_results.items():
         if not polls_data:
             continue
@@ -304,41 +311,51 @@ async def _run_wikipedia_refresh(log_id: int, state_filter: str = None):
                 if not race:
                     continue
 
-                # Get all existing external_ids for this source in one query
+                # Get all existing polls for these external_ids
                 ext_ids = [p.get("external_id") for p in polls_data if p.get("external_id")]
                 existing_result = await db.execute(
-                    select(Poll.external_id).where(
+                    select(Poll).where(
                         Poll.external_id.in_(ext_ids),
                         Poll.source == "wikipedia",
                     )
                 )
-                existing_ids = set(r[0] for r in existing_result.all())
+                existing_polls = {p.external_id: p for p in existing_result.scalars().all()}
 
-                # Batch insert only new polls
                 new_polls = []
                 for poll_data in polls_data:
                     ext_id = poll_data.get("external_id")
-                    if ext_id in existing_ids:
-                        continue
-                    new_polls.append(Poll(
-                        race_id=race.id,
-                        source=poll_data.get("source", "wikipedia"),
-                        external_id=ext_id,
-                        pollster_name=poll_data["pollster_name"],
-                        poll_date_start=poll_data.get("poll_date_start"),
-                        poll_date_end=poll_data["poll_date_end"],
-                        sample_size=poll_data.get("sample_size"),
-                        population=poll_data.get("population", "rv"),
-                        results=poll_data["results"],
-                        poll_type=poll_data.get("poll_type", "senate-race"),
-                        subject=poll_data.get("subject"),
-                        raw_data=poll_data.get("raw_data"),
-                    ))
+                    existing = existing_polls.get(ext_id)
+
+                    if existing:
+                        # Check if any fields changed
+                        changed = False
+                        for field in _POLL_FIELDS:
+                            new_val = poll_data.get(field)
+                            if getattr(existing, field) != new_val:
+                                setattr(existing, field, new_val)
+                                changed = True
+                        if changed:
+                            updated += 1
+                    else:
+                        new_polls.append(Poll(
+                            race_id=race.id,
+                            source=poll_data.get("source", "wikipedia"),
+                            external_id=ext_id,
+                            pollster_name=poll_data["pollster_name"],
+                            poll_date_start=poll_data.get("poll_date_start"),
+                            poll_date_end=poll_data["poll_date_end"],
+                            sample_size=poll_data.get("sample_size"),
+                            population=poll_data.get("population", "rv"),
+                            results=poll_data["results"],
+                            poll_type=poll_data.get("poll_type", "senate-race"),
+                            subject=poll_data.get("subject"),
+                            raw_data=poll_data.get("raw_data"),
+                        ))
 
                 if new_polls:
                     db.add_all(new_polls)
-                    await db.commit()
-                    added += len(new_polls)
+                await db.commit()
+                added += len(new_polls)
 
         except Exception as e:
             errors.append(f"{state_name}: {str(e)}")
@@ -353,13 +370,14 @@ async def _run_wikipedia_refresh(log_id: int, state_filter: str = None):
             if log:
                 log.completed_at = datetime.utcnow()
                 log.polls_added = added
+                log.polls_updated = updated
                 log.errors = errors
                 log.success = len(errors) == 0
                 await db.commit()
     except Exception:
         pass
 
-    logger.info(f"Wikipedia refresh complete: {added} polls added, {len(errors)} errors")
+    logger.info(f"Wikipedia refresh complete: {added} added, {updated} updated, {len(errors)} errors")
 
 
 async def _run_house_refresh(log_id: int, state_filter: str = None):
@@ -373,36 +391,64 @@ async def _run_house_refresh(log_id: int, state_filter: str = None):
     house_results = await fetch_all_house_wikipedia(states)
 
     added = 0
+    updated = 0
     errors = []
+
+    _POLL_FIELDS = [
+        "pollster_name", "poll_date_start", "poll_date_end",
+        "sample_size", "population", "results",
+    ]
+
     for state_name, polls_data in house_results.items():
         try:
             async with AsyncSessionLocal() as db:
+                # Batch-fetch existing polls for this state
+                ext_ids = [p.get("external_id") for p in polls_data if p.get("external_id")]
+                if ext_ids:
+                    existing_result = await db.execute(
+                        select(Poll).where(
+                            Poll.external_id.in_(ext_ids),
+                            Poll.source == "wikipedia",
+                        )
+                    )
+                    existing_polls = {p.external_id: p for p in existing_result.scalars().all()}
+                else:
+                    existing_polls = {}
+
+                new_polls = []
                 for poll_data in polls_data:
                     ext_id = poll_data.get("external_id")
-                    existing_stmt = select(Poll).where(
-                        Poll.external_id == ext_id,
-                        Poll.source == "wikipedia",
-                    )
-                    existing_result = await db.execute(existing_stmt)
-                    if existing_result.scalar_one_or_none():
-                        continue
+                    existing = existing_polls.get(ext_id)
 
-                    db.add(Poll(
-                        race_id=None,
-                        source="wikipedia",
-                        external_id=ext_id,
-                        pollster_name=poll_data["pollster_name"],
-                        poll_date_start=poll_data.get("poll_date_start"),
-                        poll_date_end=poll_data["poll_date_end"],
-                        sample_size=poll_data.get("sample_size"),
-                        population=poll_data.get("population", "rv"),
-                        results=poll_data["results"],
-                        poll_type="house-race",
-                        subject=poll_data.get("subject"),
-                        raw_data=poll_data.get("raw_data"),
-                    ))
-                    added += 1
+                    if existing:
+                        changed = False
+                        for field in _POLL_FIELDS:
+                            new_val = poll_data.get(field)
+                            if getattr(existing, field) != new_val:
+                                setattr(existing, field, new_val)
+                                changed = True
+                        if changed:
+                            updated += 1
+                    else:
+                        new_polls.append(Poll(
+                            race_id=None,
+                            source="wikipedia",
+                            external_id=ext_id,
+                            pollster_name=poll_data["pollster_name"],
+                            poll_date_start=poll_data.get("poll_date_start"),
+                            poll_date_end=poll_data["poll_date_end"],
+                            sample_size=poll_data.get("sample_size"),
+                            population=poll_data.get("population", "rv"),
+                            results=poll_data["results"],
+                            poll_type="house-race",
+                            subject=poll_data.get("subject"),
+                            raw_data=poll_data.get("raw_data"),
+                        ))
+
+                if new_polls:
+                    db.add_all(new_polls)
                 await db.commit()
+                added += len(new_polls)
         except Exception as e:
             errors.append(f"{state_name}: {str(e)}")
             logger.error(f"Error storing House polls for {state_name}: {e}")
@@ -415,12 +461,13 @@ async def _run_house_refresh(log_id: int, state_filter: str = None):
             if log:
                 log.completed_at = datetime.utcnow()
                 log.polls_added = added
+                log.polls_updated = updated
                 log.errors = errors
                 log.success = len(errors) == 0
                 await db.commit()
     except Exception:
         pass
-    logger.info(f"House refresh complete: {added} polls added, {len(errors)} errors")
+    logger.info(f"House refresh complete: {added} added, {updated} updated, {len(errors)} errors")
 
 
 async def _recompute_all():
@@ -511,3 +558,102 @@ async def _recompute_all():
 
         await db.commit()
         logger.info("Recomputed all aggregates")
+
+
+@router.post("/refresh/generic-ballot")
+async def refresh_generic_ballot(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger a refresh of generic congressional ballot polls from RealClearPolling."""
+    log = RefreshLog(source="realclearpolling", started_at=datetime.utcnow())
+    db.add(log)
+    await db.flush()
+    log_id = log.id
+
+    background_tasks.add_task(_run_generic_ballot_refresh, log_id)
+    return {"message": "Generic ballot refresh started", "log_id": log_id}
+
+
+async def _run_generic_ballot_refresh(log_id: int):
+    """Background task: fetch generic ballot polls from RCP and store in DB."""
+    from api.database import AsyncSessionLocal
+    from api.scrapers.generic_ballot import fetch_generic_ballot_polls
+
+    polls_data = await fetch_generic_ballot_polls()
+    added = 0
+    updated = 0
+    errors = []
+
+    _POLL_FIELDS = [
+        "pollster_name", "poll_date_start", "poll_date_end",
+        "sample_size", "population", "results",
+    ]
+
+    try:
+        async with AsyncSessionLocal() as db:
+            ext_ids = [p.get("external_id") for p in polls_data if p.get("external_id")]
+            if ext_ids:
+                existing_result = await db.execute(
+                    select(Poll).where(
+                        Poll.external_id.in_(ext_ids),
+                        Poll.source == "realclearpolling",
+                    )
+                )
+                existing_polls = {p.external_id: p for p in existing_result.scalars().all()}
+            else:
+                existing_polls = {}
+
+            new_polls = []
+            for poll_data in polls_data:
+                ext_id = poll_data.get("external_id")
+                existing = existing_polls.get(ext_id)
+
+                if existing:
+                    changed = False
+                    for field in _POLL_FIELDS:
+                        new_val = poll_data.get(field)
+                        if getattr(existing, field) != new_val:
+                            setattr(existing, field, new_val)
+                            changed = True
+                    if changed:
+                        updated += 1
+                else:
+                    new_polls.append(Poll(
+                        race_id=None,
+                        source="realclearpolling",
+                        external_id=ext_id,
+                        pollster_name=poll_data["pollster_name"],
+                        poll_date_start=poll_data.get("poll_date_start"),
+                        poll_date_end=poll_data["poll_date_end"],
+                        sample_size=poll_data.get("sample_size"),
+                        population=poll_data.get("population", "rv"),
+                        results=poll_data["results"],
+                        poll_type="generic-ballot",
+                        subject="2026 Generic Ballot",
+                        raw_data=poll_data.get("raw_data"),
+                    ))
+
+            if new_polls:
+                db.add_all(new_polls)
+            await db.commit()
+            added = len(new_polls)
+    except Exception as e:
+        errors.append(str(e))
+        logger.error(f"Error storing generic ballot polls: {e}")
+
+    try:
+        async with AsyncSessionLocal() as db:
+            log_stmt = select(RefreshLog).where(RefreshLog.id == log_id)
+            log_result = await db.execute(log_stmt)
+            log = log_result.scalar_one_or_none()
+            if log:
+                log.completed_at = datetime.utcnow()
+                log.polls_added = added
+                log.polls_updated = updated
+                log.errors = errors
+                log.success = len(errors) == 0
+                await db.commit()
+    except Exception:
+        pass
+    logger.info(f"Generic ballot refresh: {added} added, {updated} updated, {len(errors)} errors")

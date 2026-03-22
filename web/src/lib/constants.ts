@@ -44,6 +44,22 @@ export const GRADE_WEIGHTS: Record<string, number> = {
 export const UNRATED_POLLSTER_WEIGHT = 2;
 
 // ---------------------------------------------------------------------------
+// National environment adjustment for House projections
+// ---------------------------------------------------------------------------
+
+/** Expected national D−R environment shift for 2026 midterm (positive = D).
+ *  Applied when projecting unpolled House seats. Fallback if no generic ballot data. */
+export const HOUSE_NATIONAL_ENVIRONMENT = 2.0;
+
+/** Number of recent polls (within RECENT_POLL_DAYS) at which a district's projection
+ *  fully trusts its polling data over the generic ballot prior. At fewer polls,
+ *  the projection blends polling margin with the generic ballot margin. */
+export const POLLS_FOR_FULL_WEIGHT = 5;
+
+/** How many days back to count polls as "recent" for the blending weight. */
+export const RECENT_POLL_DAYS = 30;
+
+// ---------------------------------------------------------------------------
 // Rating thresholds (derived from polling margin)
 // ---------------------------------------------------------------------------
 

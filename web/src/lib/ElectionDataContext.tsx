@@ -13,6 +13,8 @@ import {
   type RecentPoll,
   type NewsItem,
   type PollEntry,
+  STATE_NAMES,
+  marginToLean,
   apiGet,
   transformSenateRace,
   transformHouseRace,
@@ -22,6 +24,27 @@ import {
   generateNewsItems,
   computeSeatBalance,
 } from "./electionData";
+import { HOUSE_NATIONAL_ENVIRONMENT, POLLS_FOR_FULL_WEIGHT, RECENT_POLL_DAYS } from "./constants";
+import { DISTRICT_PRES_2024 } from "./districtPres2024";
+import { DISTRICT_HOUSE_2024 } from "./districtHouse2024";
+
+export interface GenericBallotPoll {
+  id: number;
+  pollster: string;
+  endDate: string;
+  startDate?: string;
+  demPct: number;
+  repPct: number;
+  margin: number;
+  sampleSize?: number;
+  population?: string;
+}
+
+export interface GenericBallotAverage {
+  dem: number;
+  rep: number;
+  margin: number;
+}
 
 interface ElectionData {
   senateRaces: SenateRace[];
@@ -31,6 +54,8 @@ interface ElectionData {
   pollEntries: PollEntry[];
   tickerItems: string[];
   seatBalance: ReturnType<typeof computeSeatBalance>;
+  genericBallotPolls: GenericBallotPoll[];
+  genericBallotAverage: GenericBallotAverage | null;
   totalSenatePolls: number;
   totalHousePolls: number;
   loading: boolean;
@@ -50,6 +75,8 @@ const defaultCtx: ElectionData = {
     senate: { demProjected: 0, repProjected: 0, tossUp: 0, total: 0, needed: 51, breakdown: { sSafeD: 0, sLikelyD: 0, sLeanD: 0, sTossUp: 0, sLeanR: 0, sLikelyR: 0, sSafeR: 0 } },
     house: { demProjected: 0, repProjected: 0, tossUp: 0, total: 0, needed: 218 },
   },
+  genericBallotPolls: [],
+  genericBallotAverage: null,
   totalSenatePolls: 0,
   totalHousePolls: 0,
   loading: true,
@@ -71,11 +98,13 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
     setData((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
-      const [rawRaces, rawHouseDistricts, rawRecentPolls, rawFec] = await Promise.all([
+      const [rawRaces, rawHouseDistricts, rawRecentPolls, rawFec, rawGBPolls, rawGBAvg] = await Promise.all([
         apiGet<any[]>("/senate/races"),
         apiGet<any[]>("/house/races?limit=1000"),
         apiGet<{ polls: any[]; count: number }>("/polls/search?days=60&limit=50"),
         apiGet<Record<string, any[]>>("/fec").catch(() => ({} as Record<string, any[]>)),
+        apiGet<{ polls: any[] }>("/generic-ballot/polls").catch(() => ({ polls: [] })),
+        apiGet<{ average: any; poll_count: number }>("/generic-ballot/average").catch(() => ({ average: null, poll_count: 0 })),
       ]);
 
       const races: any[] = Array.isArray(rawRaces) ? rawRaces : [];
@@ -135,6 +164,78 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Transform generic ballot data
+      const genericBallotPolls: GenericBallotPoll[] = (rawGBPolls.polls || []).map((p: any) => ({
+        id: p.id,
+        pollster: p.pollster,
+        endDate: p.end_date,
+        startDate: p.start_date,
+        demPct: p.dem_pct,
+        repPct: p.rep_pct,
+        margin: p.margin,
+        sampleSize: p.sample_size,
+        population: p.population,
+      }));
+      const genericBallotAverage: GenericBallotAverage | null = rawGBAvg.average ?? null;
+
+      // Use live generic ballot margin for House environment shift, fall back to constant
+      const envShift = genericBallotAverage?.margin ?? HOUSE_NATIONAL_ENVIRONMENT;
+
+      // Add remaining districts (no polls) from presidential data
+      const polledDistricts = new Set(houseRaces.map((r) => r.district));
+      for (const [district, presMargin] of Object.entries(DISTRICT_PRES_2024)) {
+        if (polledDistricts.has(district)) continue;
+        const stateCode = district.split("-")[0] || "";
+        // Use 2024 House race margin if available, else presidential margin
+        // Both are R-positive; our margin convention is D-positive
+        const rawMargin = DISTRICT_HOUSE_2024[district] ?? presMargin;
+        const dMargin = -rawMargin + envShift;
+        const lean = marginToLean(dMargin);
+        houseRaces.push({
+          district,
+          state: STATE_NAMES[stateCode] ?? stateCode,
+          stateCode,
+          demCandidate: "TBD",
+          repCandidate: "TBD",
+          demPct: 0,
+          repPct: 0,
+          margin: dMargin,
+          projectedMargin: dMargin,
+          lean,
+          called: false,
+          pollCount: 0,
+          pollingSamples: [],
+        });
+      }
+
+      // Compute projectedMargin for all districts with poll data:
+      // Blend polling margin with 2024 baseline + generic ballot shift,
+      // weighted by number of RECENT polls (within RECENT_POLL_DAYS)
+      const recentCutoff = new Date();
+      recentCutoff.setDate(recentCutoff.getDate() - RECENT_POLL_DAYS);
+      for (const r of houseRaces) {
+        const rawBaseline = DISTRICT_HOUSE_2024[r.district] ?? DISTRICT_PRES_2024[r.district];
+        if (rawBaseline == null) continue;
+        const prior = -rawBaseline + envShift; // D-positive
+
+        if (r.demPct > 0 || r.repPct > 0) {
+          // Has general election polling — blend with prior based on recent poll count
+          const recentCount = r.pollingSamples.filter((s) => {
+            try {
+              const d = new Date(s.date + ", " + new Date().getFullYear());
+              return !isNaN(d.getTime()) && d >= recentCutoff;
+            } catch { return false; }
+          }).length;
+          const blend = Math.min(recentCount / POLLS_FOR_FULL_WEIGHT, 1);
+          r.projectedMargin = blend * r.margin + (1 - blend) * prior;
+        } else {
+          // In polled set but no general election data — use 2024 baseline + env shift
+          r.projectedMargin = prior;
+          r.margin = prior;
+          r.lean = marginToLean(prior);
+        }
+      }
+
       const recentPolls = (rawRecentPolls.polls || []).map(transformRecentPoll);
       const pollEntries: PollEntry[] = recentPolls
         .map(transformRecentPollToPollEntry)
@@ -157,6 +258,8 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
         pollEntries,
         tickerItems,
         seatBalance,
+        genericBallotPolls,
+        genericBallotAverage,
         totalSenatePolls,
         totalHousePolls,
         loading: false,

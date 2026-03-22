@@ -11,6 +11,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -26,6 +29,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 SENATE_POLLS_FILE = DATA_DIR / "senate_polls.json"
 HOUSE_POLLS_FILE = DATA_DIR / "house_polls.json"
+GENERIC_BALLOT_FILE = DATA_DIR / "generic_ballot.json"
 FEC_FILE = DATA_DIR / "fec_fundraising.json"
 META_FILE = DATA_DIR / "meta.json"
 
@@ -35,8 +39,9 @@ FEC_API_KEY = os.environ.get("FEC_API_KEY", "")
 _cache: dict = {
     "senate_polls": {},   # state -> [poll, ...]
     "house_polls": {},    # state -> [poll, ...]
+    "generic_ballot": [],  # [poll, ...]
     "fec": {},            # state_abbr -> { candidates: [...] }
-    "meta": {"last_senate_refresh": None, "last_house_refresh": None, "last_fec_refresh": None},
+    "meta": {"last_senate_refresh": None, "last_house_refresh": None, "last_generic_ballot_refresh": None, "last_fec_refresh": None},
 }
 
 from api.constants import POLL_REFRESH_INTERVAL_HOURS as REFRESH_INTERVAL_HOURS
@@ -62,6 +67,10 @@ def _save():
             json.dumps(_cache["house_polls"], default=_json_serial, ensure_ascii=False),
             encoding="utf-8",
         )
+        GENERIC_BALLOT_FILE.write_text(
+            json.dumps(_cache["generic_ballot"], default=_json_serial, ensure_ascii=False),
+            encoding="utf-8",
+        )
         FEC_FILE.write_text(
             json.dumps(_cache["fec"], default=_json_serial, ensure_ascii=False),
             encoding="utf-8",
@@ -81,6 +90,8 @@ def _load():
             _cache["senate_polls"] = json.loads(SENATE_POLLS_FILE.read_text(encoding="utf-8"))
         if HOUSE_POLLS_FILE.exists():
             _cache["house_polls"] = json.loads(HOUSE_POLLS_FILE.read_text(encoding="utf-8"))
+        if GENERIC_BALLOT_FILE.exists():
+            _cache["generic_ballot"] = json.loads(GENERIC_BALLOT_FILE.read_text(encoding="utf-8"))
         if FEC_FILE.exists():
             _cache["fec"] = json.loads(FEC_FILE.read_text(encoding="utf-8"))
         if META_FILE.exists():
@@ -142,6 +153,28 @@ async def refresh_house():
     _save()
     total = sum(len(v) for v in _cache["house_polls"].values())
     logger.info(f"House refresh done: +{total_new} new, {total} total polls")
+
+
+async def refresh_generic_ballot():
+    """Fetch generic congressional ballot polls from RealClearPolling."""
+    from api.scrapers.generic_ballot import fetch_generic_ballot_polls
+    logger.info("Starting generic ballot refresh...")
+    polls = await fetch_generic_ballot_polls()
+
+    existing_ids = {p["external_id"] for p in _cache["generic_ballot"]}
+    new_polls = []
+    for p in polls:
+        if p["external_id"] not in existing_ids:
+            for key in ("poll_date_start", "poll_date_end"):
+                if isinstance(p.get(key), datetime):
+                    p[key] = p[key].isoformat()
+            new_polls.append(p)
+
+    if new_polls:
+        _cache["generic_ballot"].extend(new_polls)
+    _cache["meta"]["last_generic_ballot_refresh"] = datetime.utcnow().isoformat()
+    _save()
+    logger.info(f"Generic ballot refresh done: +{len(new_polls)} new, {len(_cache['generic_ballot'])} total")
 
 
 async def refresh_fec():
@@ -259,6 +292,19 @@ async def lifespan(app: FastAPI):
             needs_fec = True
     if needs_fec:
         asyncio.create_task(refresh_fec())
+
+    # Generic ballot: refresh if no data or stale
+    needs_gb = not _cache["generic_ballot"]
+    gb_last = _cache["meta"].get("last_generic_ballot_refresh")
+    if gb_last:
+        try:
+            last_gb = datetime.fromisoformat(gb_last)
+            if (datetime.utcnow() - last_gb).total_seconds() > REFRESH_INTERVAL_HOURS * 3600:
+                needs_gb = True
+        except (ValueError, TypeError):
+            needs_gb = True
+    if needs_gb:
+        asyncio.create_task(refresh_generic_ballot())
 
     task = asyncio.create_task(_periodic_refresh())
     fec_task = asyncio.create_task(_periodic_fec_refresh())
@@ -421,8 +467,106 @@ async def search_polls(days: int = 60, limit: int = 50):
                     "subject": p.get("subject"),
                 })
 
+    for p in _cache["generic_ballot"]:
+        if p.get("poll_date_end", "") >= cutoff:
+            all_polls.append({
+                "id": hash(p["external_id"]) & 0x7FFFFFFF,
+                "pollster": p["pollster_name"],
+                "end_date": p.get("poll_date_end", ""),
+                "sample_size": p.get("sample_size"),
+                "population": p.get("population"),
+                "results": p.get("results", []),
+                "poll_type": "generic-ballot",
+                "subject": "2026 Generic Ballot",
+            })
+
     all_polls.sort(key=lambda p: p.get("end_date", ""), reverse=True)
     return {"polls": all_polls[:limit], "count": len(all_polls)}
+
+
+@app.get("/api/v1/generic-ballot/polls")
+async def get_generic_ballot_polls():
+    """Return all generic ballot polls sorted by date."""
+    polls = sorted(
+        _cache["generic_ballot"],
+        key=lambda p: p.get("poll_date_end", ""),
+        reverse=True,
+    )
+    formatted = []
+    for p in polls:
+        dem = next((r for r in p.get("results", []) if r.get("party") == "DEM"), None)
+        rep = next((r for r in p.get("results", []) if r.get("party") == "REP"), None)
+        formatted.append({
+            "id": hash(p["external_id"]) & 0x7FFFFFFF,
+            "pollster": p["pollster_name"],
+            "end_date": p.get("poll_date_end", ""),
+            "start_date": p.get("poll_date_start"),
+            "sample_size": p.get("sample_size"),
+            "population": p.get("population"),
+            "dem_pct": dem["pct"] if dem else 0,
+            "rep_pct": rep["pct"] if rep else 0,
+            "margin": (dem["pct"] if dem else 0) - (rep["pct"] if rep else 0),
+            "results": p.get("results", []),
+        })
+    return {"polls": formatted, "count": len(formatted)}
+
+
+@app.get("/api/v1/generic-ballot/average")
+async def get_generic_ballot_average():
+    """Compute weighted average of generic ballot polls using the full aggregation engine."""
+    from api.aggregator.engine import PollRecord, aggregate_polls
+
+    polls = _cache["generic_ballot"]
+    if not polls:
+        return {"average": None, "poll_count": 0, "methodology": {}}
+
+    records = []
+    for p in polls:
+        end_str = p.get("poll_date_end", "")
+        if not end_str:
+            continue
+        try:
+            end_date = datetime.fromisoformat(end_str) if isinstance(end_str, str) else end_str
+        except (ValueError, TypeError):
+            continue
+        records.append(PollRecord(
+            pollster=p["pollster_name"],
+            end_date=end_date,
+            sample_size=p.get("sample_size"),
+            population=p.get("population"),
+            results=p.get("results", []),
+        ))
+
+    if not records:
+        return {"average": None, "poll_count": 0, "methodology": {}}
+
+    agg = aggregate_polls(records)
+
+    dem_result = next((r for r in agg["results"] if r["party"] in ("DEM", "D")), None)
+    rep_result = next((r for r in agg["results"] if r["party"] in ("REP", "R")), None)
+
+    if not dem_result or not rep_result:
+        return {"average": None, "poll_count": agg["polls_included"], "methodology": agg.get("methodology", {})}
+
+    return {
+        "average": {
+            "dem": round(dem_result["pct"], 1),
+            "rep": round(rep_result["pct"], 1),
+            "margin": round(dem_result["pct"] - rep_result["pct"], 1),
+            "dem_low": round(dem_result.get("pct_low", dem_result["pct"]), 1),
+            "dem_high": round(dem_result.get("pct_high", dem_result["pct"]), 1),
+            "rep_low": round(rep_result.get("pct_low", rep_result["pct"]), 1),
+            "rep_high": round(rep_result.get("pct_high", rep_result["pct"]), 1),
+        },
+        "poll_count": agg["polls_included"],
+        "methodology": agg.get("methodology", {}),
+    }
+
+
+@app.post("/api/v1/admin/refresh/generic-ballot")
+async def trigger_generic_ballot_refresh():
+    asyncio.create_task(refresh_generic_ballot())
+    return {"message": "Generic ballot refresh started"}
 
 
 @app.get("/api/v1/fec/{state}")
