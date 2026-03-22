@@ -234,6 +234,4 @@ export const DISTRICT_PRES_2024: Record<string, number> = {
   // Wyoming
   "WY-AL": 46.2,
 
-  // DC (non-voting delegate)
-  "DC-AL": -76.6,
 };
