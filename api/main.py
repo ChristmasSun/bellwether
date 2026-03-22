@@ -564,6 +564,8 @@ async def get_generic_ballot_average():
             sample_size=p.get("sample_size"),
             population=p.get("population"),
             results=p.get("results", []),
+            is_partisan=p.get("is_partisan", False),
+            partisan_lean=p.get("partisan_lean", ""),
         ))
 
     if not records:

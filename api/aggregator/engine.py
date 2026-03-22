@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 # Half-life for recency decay (days)
 HALF_LIFE_DAYS = 21.0
 
+# Partisan poll margin penalty (pp).
+# Internal polls (marked with (R) or (D)) have their candidate's percentage
+# shifted toward center by this amount. E.g. an R internal showing R+10
+# becomes R+5 with a penalty of 5.
+PARTISAN_MARGIN_PENALTY = 5.0
+
 # Grade → quality multiplier
 GRADE_WEIGHTS = {
     "A+": 1.50,
@@ -93,6 +99,7 @@ class PollRecord:
         results: list[dict],  # [{"candidate": str, "party": str, "pct": float}]
         grade: Optional[str] = None,
         is_partisan: bool = False,
+        partisan_lean: str = "",  # "DEM" or "REP" if internal poll
     ):
         self.pollster = pollster
         self.end_date = end_date
@@ -101,6 +108,7 @@ class PollRecord:
         self.results = results
         self.grade = grade
         self.is_partisan = is_partisan
+        self.partisan_lean = partisan_lean.upper()
 
         # Apply partisan down-weighting (partisan polls get 0.6x)
         self._partisan_mult = 0.6 if is_partisan else 1.0
@@ -116,10 +124,17 @@ class PollRecord:
         return max(w, 1e-9)
 
     def adjusted_results(self) -> list[dict]:
-        """Results after population type adjustment."""
+        """Results after population type and partisan margin adjustments."""
         out = []
         for r in self.results:
             adj = _population_adjustment(self.population, r.get("party", ""))
+            # Partisan penalty: shift the sponsoring party's candidate toward center
+            if self.is_partisan and PARTISAN_MARGIN_PENALTY > 0:
+                party = r.get("party", "").upper()
+                if self.partisan_lean in ("REP", "R") and party in ("REP", "R"):
+                    adj -= PARTISAN_MARGIN_PENALTY  # reduce R candidate's pct
+                elif self.partisan_lean in ("DEM", "D") and party in ("DEM", "D"):
+                    adj -= PARTISAN_MARGIN_PENALTY  # reduce D candidate's pct
             out.append({**r, "pct": r["pct"] + adj})
         return out
 

@@ -264,6 +264,7 @@ def _poll_to_record(poll: Poll) -> PollRecord:
         results=poll.results or [],
         grade=poll.pollster_obj.grade if poll.pollster_obj else None,
         is_partisan=poll.pollster_obj.partisan if poll.pollster_obj else False,
+        partisan_lean=poll.pollster_obj.partisan_lean or "" if poll.pollster_obj else "",
     )
 
 

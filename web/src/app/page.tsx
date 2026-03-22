@@ -1439,6 +1439,106 @@ function AboutView({ onBack, mobile }: { onBack: () => void; mobile?: boolean })
               <a href="https://x.com/VedAnand07" target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-primary)", textDecoration: "underline", textUnderlineOffset: 3 }}>here</a>{" "}
               if you have any thoughts!
             </p>
+
+            <h2 style={{ fontFamily: serif, fontSize: mobile ? 24 : 28, color: "var(--text-primary)", letterSpacing: "-0.02em", marginTop: 32 }}>Polling Methodology</h2>
+
+            <p>
+              Our polling averages are computed using a multi-step weighting system inspired by FiveThirtyEight&apos;s methodology:
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <strong style={{ color: "var(--text-primary)" }}>1. Recency Weighting</strong>
+                <p style={{ marginTop: 4 }}>
+                  Polls are weighted by how recent they are using exponential decay with a 21-day half-life.
+                  A poll from 21 days ago gets half the weight of a poll from today. This ensures the average
+                  responds quickly to shifts in public opinion while still incorporating older data.
+                </p>
+              </div>
+
+              <div>
+                <strong style={{ color: "var(--text-primary)" }}>2. Sample Size</strong>
+                <p style={{ marginTop: 4 }}>
+                  Larger polls get more weight, proportional to the square root of the sample size (capped at
+                  &radic;2000). This means a 2000-person poll gets about 1.8x the weight of a 600-person poll,
+                  not 3.3x — diminishing returns reflect that larger samples help but don&apos;t eliminate
+                  methodological issues.
+                </p>
+              </div>
+
+              <div>
+                <strong style={{ color: "var(--text-primary)" }}>3. Pollster Quality</strong>
+                <p style={{ marginTop: 4 }}>
+                  Each pollster receives a grade from{" "}
+                  <a href="https://votehub.com" target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-primary)", textDecoration: "underline", textUnderlineOffset: 3 }}>VoteHub</a>,
+                  which tracks historical accuracy. Grades translate to weight multipliers: A+ pollsters get
+                  1.5x weight, A gets 1.35x, B gets 1.0x, C gets 0.75x, and D gets 0.5x. Unrated pollsters
+                  get 0.85x.
+                </p>
+              </div>
+
+              <div>
+                <strong style={{ color: "var(--text-primary)" }}>4. Population Adjustment</strong>
+                <p style={{ marginTop: 4 }}>
+                  Likely voter (LV) polls are generally more accurate than registered voter (RV) polls and
+                  tend to skew slightly more Republican. We apply a small adjustment: LV polls shift R+0.5pp,
+                  adult (A) polls shift D+0.5pp, and RV polls are unchanged.
+                </p>
+              </div>
+
+              <div>
+                <strong style={{ color: "var(--text-primary)" }}>5. Partisan Poll Penalty</strong>
+                <p style={{ marginTop: 4 }}>
+                  Internal/partisan polls (marked with (R) or (D) after the pollster name) receive two
+                  penalties: a 0.6x weight multiplier AND a 5-point margin shift toward center for the
+                  sponsoring party&apos;s candidate. This accounts for the well-documented tendency of
+                  partisan polls to show more favorable results for their sponsor.
+                </p>
+              </div>
+
+              <div>
+                <strong style={{ color: "var(--text-primary)" }}>6. House Effects Correction</strong>
+                <p style={{ marginTop: 4 }}>
+                  Some pollsters consistently lean toward one party (e.g., Rasmussen tends R, PPP tends D).
+                  We iteratively compute each pollster&apos;s &quot;house effect&quot; — their average deviation from
+                  the consensus — and adjust their results accordingly. This requires at least 3 polls to activate.
+                </p>
+              </div>
+
+              <div>
+                <strong style={{ color: "var(--text-primary)" }}>7. Dominance Correction</strong>
+                <p style={{ marginTop: 4 }}>
+                  Pollsters who release many polls on the same race get diminishing weight per poll. This
+                  prevents a single prolific pollster from dominating the average. Polls beyond the 3rd from
+                  the same pollster receive progressively reduced weight.
+                </p>
+              </div>
+            </div>
+
+            <h2 style={{ fontFamily: serif, fontSize: mobile ? 24 : 28, color: "var(--text-primary)", letterSpacing: "-0.02em", marginTop: 32 }}>House Projections</h2>
+
+            <p>
+              House seat projections blend three data sources for each of the 435 districts:
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <p>
+                <strong style={{ color: "var(--text-primary)" }}>Generic ballot:</strong>{" "}
+                The national generic congressional ballot average (scraped from RealClearPolling) provides the
+                baseline national environment. This margin is applied as a uniform shift to all districts.
+              </p>
+              <p>
+                <strong style={{ color: "var(--text-primary)" }}>2024 baseline:</strong>{" "}
+                Each district&apos;s 2024 House race result (or 2024 presidential margin as fallback) serves
+                as the partisan baseline. The generic ballot shift is added on top.
+              </p>
+              <p>
+                <strong style={{ color: "var(--text-primary)" }}>District polling:</strong>{" "}
+                For districts with polls, the projection blends polling data with the adjusted baseline.
+                The blend weight depends on the number of recent polls (within 30 days) — 5 recent polls
+                means 100% trust in polling data, fewer polls means more reliance on the baseline.
+              </p>
+            </div>
           </div>
         </div>
       </div>
