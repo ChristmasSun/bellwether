@@ -112,23 +112,38 @@ async def refresh_senate():
     states = [r["state"] for r in SENATE_RACES_2026]
     results = await fetch_all_wikipedia(states)
 
+    _COMPARE_FIELDS = ("pollster_name", "sample_size", "population", "results")
+
     total_new = 0
+    total_updated = 0
     for state, polls in results.items():
         existing = _cache["senate_polls"].get(state, [])
-        existing_ids = {p["external_id"] for p in existing}
-        new_polls = [p for p in polls if p["external_id"] not in existing_ids]
-        if new_polls:
-            for p in new_polls:
-                for key in ("poll_date_start", "poll_date_end"):
-                    if isinstance(p.get(key), datetime):
-                        p[key] = p[key].isoformat()
-            _cache["senate_polls"][state] = existing + new_polls
-            total_new += len(new_polls)
+        existing_by_id = {p["external_id"]: p for p in existing}
+        merged = list(existing)
+
+        for p in polls:
+            for key in ("poll_date_start", "poll_date_end"):
+                if isinstance(p.get(key), datetime):
+                    p[key] = p[key].isoformat()
+
+            old = existing_by_id.get(p["external_id"])
+            if old:
+                # Update if any fields changed
+                changed = any(old.get(f) != p.get(f) for f in _COMPARE_FIELDS)
+                if changed:
+                    for f in _COMPARE_FIELDS:
+                        old[f] = p.get(f)
+                    total_updated += 1
+            else:
+                merged.append(p)
+                total_new += 1
+
+        _cache["senate_polls"][state] = merged
 
     _cache["meta"]["last_senate_refresh"] = datetime.utcnow().isoformat()
     _save()
     total = sum(len(v) for v in _cache["senate_polls"].values())
-    logger.info(f"Senate refresh done: +{total_new} new, {total} total polls")
+    logger.info(f"Senate refresh done: +{total_new} new, {total_updated} updated, {total} total polls")
 
 
 async def refresh_house():
@@ -136,23 +151,37 @@ async def refresh_house():
     states = list(STATE_ABBR.keys())
     results = await fetch_all_house_wikipedia(states)
 
+    _COMPARE_FIELDS = ("pollster_name", "sample_size", "population", "results")
+
     total_new = 0
+    total_updated = 0
     for state, polls in results.items():
         existing = _cache["house_polls"].get(state, [])
-        existing_ids = {p["external_id"] for p in existing}
-        new_polls = [p for p in polls if p["external_id"] not in existing_ids]
-        if new_polls:
-            for p in new_polls:
-                for key in ("poll_date_start", "poll_date_end"):
-                    if isinstance(p.get(key), datetime):
-                        p[key] = p[key].isoformat()
-            _cache["house_polls"][state] = existing + new_polls
-            total_new += len(new_polls)
+        existing_by_id = {p["external_id"]: p for p in existing}
+        merged = list(existing)
+
+        for p in polls:
+            for key in ("poll_date_start", "poll_date_end"):
+                if isinstance(p.get(key), datetime):
+                    p[key] = p[key].isoformat()
+
+            old = existing_by_id.get(p["external_id"])
+            if old:
+                changed = any(old.get(f) != p.get(f) for f in _COMPARE_FIELDS)
+                if changed:
+                    for f in _COMPARE_FIELDS:
+                        old[f] = p.get(f)
+                    total_updated += 1
+            else:
+                merged.append(p)
+                total_new += 1
+
+        _cache["house_polls"][state] = merged
 
     _cache["meta"]["last_house_refresh"] = datetime.utcnow().isoformat()
     _save()
     total = sum(len(v) for v in _cache["house_polls"].values())
-    logger.info(f"House refresh done: +{total_new} new, {total} total polls")
+    logger.info(f"House refresh done: +{total_new} new, {total_updated} updated, {total} total polls")
 
 
 async def refresh_generic_ballot():
