@@ -306,7 +306,7 @@ function SenateRaceRow({ race, onClick, mobile }: { race: SenateRace; onClick: (
 // ---------------------------------------------------------------------------
 
 function HouseRaceRow({ race, mobile, onClick }: { race: HouseRace; mobile?: boolean; onClick?: () => void }) {
-  const margin = race.demPct - race.repPct;
+  const margin = race.projectedMargin;
   const distBaseline = districtPresBaseline(race.district);
 
   if (mobile) {
@@ -323,7 +323,7 @@ function HouseRaceRow({ race, mobile, onClick }: { race: HouseRace; mobile?: boo
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{race.lean}</span>
           </div>
           <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600, color: marginColor(margin) }}>
-            {race.demPct > 0 || race.repPct > 0 ? marginLabel(margin) : "—"}
+            {marginLabel(margin)}
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -376,7 +376,7 @@ function HouseRaceRow({ race, mobile, onClick }: { race: HouseRace; mobile?: boo
         </span>
       </div>
       <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 600, color: marginColor(margin), marginLeft: "auto" }}>
-        {race.demPct > 0 || race.repPct > 0 ? marginLabel(margin) : "—"}
+        {marginLabel(margin)}
       </span>
     </div>
   );
@@ -1112,7 +1112,7 @@ function RaceDetailView({ race, onBack, lastRefresh, mobile }: { race: SenateRac
 // ---------------------------------------------------------------------------
 
 function HouseDetailView({ race, onBack, lastRefresh, mobile }: { race: HouseRace; onBack: () => void; lastRefresh: Date | null; mobile?: boolean }) {
-  const margin = race.margin;
+  const margin = race.projectedMargin;
   const demBarPct = race.demPct + race.repPct > 0 ? (race.demPct / (race.demPct + race.repPct)) * 100 : 50;
   const demName = race.demCandidate || "Dem";
   const repName = race.repCandidate || "Rep";
