@@ -19,8 +19,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.scrapers.wikipedia import fetch_all_wikipedia
 from api.scrapers.wikipedia_house import fetch_all_house_wikipedia, STATE_ABBR
+from api.scrapers.wikipedia_governor import fetch_all_governor_wikipedia
 from api.aggregator.engine import PollRecord, aggregate_polls
 from api.data.senate_races_2026 import SENATE_RACES_2026
+from api.data.governor_races_2026 import GOVERNOR_RACES_2026
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,6 +32,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 SENATE_POLLS_FILE = DATA_DIR / "senate_polls.json"
 HOUSE_POLLS_FILE = DATA_DIR / "house_polls.json"
+GOVERNOR_POLLS_FILE = DATA_DIR / "governor_polls.json"
 GENERIC_BALLOT_FILE = DATA_DIR / "generic_ballot.json"
 FEC_FILE = DATA_DIR / "fec_fundraising.json"
 META_FILE = DATA_DIR / "meta.json"
@@ -40,9 +43,10 @@ FEC_API_KEY = os.environ.get("FEC_API_KEY", "")
 _cache: dict = {
     "senate_polls": {},   # state -> [poll, ...]
     "house_polls": {},    # state -> [poll, ...]
+    "governor_polls": {},  # state -> [poll, ...]
     "generic_ballot": [],  # [poll, ...]
     "fec": {},            # state_abbr -> { candidates: [...] }
-    "meta": {"last_senate_refresh": None, "last_house_refresh": None, "last_generic_ballot_refresh": None, "last_fec_refresh": None},
+    "meta": {"last_senate_refresh": None, "last_house_refresh": None, "last_governor_refresh": None, "last_generic_ballot_refresh": None, "last_fec_refresh": None},
 }
 
 from api.constants import POLL_REFRESH_INTERVAL_HOURS as REFRESH_INTERVAL_HOURS
@@ -68,6 +72,10 @@ def _save():
             json.dumps(_cache["house_polls"], default=_json_serial, ensure_ascii=False),
             encoding="utf-8",
         )
+        GOVERNOR_POLLS_FILE.write_text(
+            json.dumps(_cache["governor_polls"], default=_json_serial, ensure_ascii=False),
+            encoding="utf-8",
+        )
         GENERIC_BALLOT_FILE.write_text(
             json.dumps(_cache["generic_ballot"], default=_json_serial, ensure_ascii=False),
             encoding="utf-8",
@@ -91,6 +99,8 @@ def _load():
             _cache["senate_polls"] = json.loads(SENATE_POLLS_FILE.read_text(encoding="utf-8"))
         if HOUSE_POLLS_FILE.exists():
             _cache["house_polls"] = json.loads(HOUSE_POLLS_FILE.read_text(encoding="utf-8"))
+        if GOVERNOR_POLLS_FILE.exists():
+            _cache["governor_polls"] = json.loads(GOVERNOR_POLLS_FILE.read_text(encoding="utf-8"))
         if GENERIC_BALLOT_FILE.exists():
             _cache["generic_ballot"] = json.loads(GENERIC_BALLOT_FILE.read_text(encoding="utf-8"))
         if FEC_FILE.exists():
@@ -99,7 +109,8 @@ def _load():
             _cache["meta"] = json.loads(META_FILE.read_text(encoding="utf-8"))
         total_s = sum(len(v) for v in _cache["senate_polls"].values())
         total_h = sum(len(v) for v in _cache["house_polls"].values())
-        logger.info(f"Loaded from disk: {total_s} senate polls, {total_h} house polls, {len(_cache['fec'])} states with FEC data")
+        total_g = sum(len(v) for v in _cache["governor_polls"].values())
+        logger.info(f"Loaded from disk: {total_s} senate polls, {total_h} house polls, {total_g} governor polls, {len(_cache['fec'])} states with FEC data")
     except Exception as e:
         logger.error(f"Failed to load data: {e}")
 
@@ -183,6 +194,44 @@ async def refresh_house():
     _save()
     total = sum(len(v) for v in _cache["house_polls"].values())
     logger.info(f"House refresh done: +{total_new} new, {total_updated} updated, {total} total polls")
+
+
+async def refresh_governor():
+    logger.info("Starting Governor poll refresh...")
+    states = [r["state"] for r in GOVERNOR_RACES_2026]
+    results = await fetch_all_governor_wikipedia(states)
+
+    _COMPARE_FIELDS = ("pollster_name", "sample_size", "population", "results")
+
+    total_new = 0
+    total_updated = 0
+    for state, polls in results.items():
+        existing = _cache["governor_polls"].get(state, [])
+        existing_by_id = {p["external_id"]: p for p in existing}
+        merged = list(existing)
+
+        for p in polls:
+            for key in ("poll_date_start", "poll_date_end"):
+                if isinstance(p.get(key), datetime):
+                    p[key] = p[key].isoformat()
+
+            old = existing_by_id.get(p["external_id"])
+            if old:
+                changed = any(old.get(f) != p.get(f) for f in _COMPARE_FIELDS)
+                if changed:
+                    for f in _COMPARE_FIELDS:
+                        old[f] = p.get(f)
+                    total_updated += 1
+            else:
+                merged.append(p)
+                total_new += 1
+
+        _cache["governor_polls"][state] = merged
+
+    _cache["meta"]["last_governor_refresh"] = datetime.utcnow().isoformat()
+    _save()
+    total = sum(len(v) for v in _cache["governor_polls"].values())
+    logger.info(f"Governor refresh done: +{total_new} new, {total_updated} updated, {total} total polls")
 
 
 async def refresh_generic_ballot():
@@ -275,6 +324,7 @@ async def _periodic_refresh():
         try:
             await refresh_senate()
             await refresh_house()
+            await refresh_governor()
         except Exception as e:
             logger.error(f"Periodic refresh failed: {e}")
 
@@ -310,6 +360,18 @@ async def lifespan(app: FastAPI):
     if needs_refresh:
         asyncio.create_task(refresh_senate())
         asyncio.create_task(refresh_house())
+
+    # Governor: refresh if no data or stale
+    needs_gov = not _cache["governor_polls"]
+    gov_last = _cache["meta"].get("last_governor_refresh")
+    if gov_last:
+        try:
+            if (datetime.utcnow() - datetime.fromisoformat(gov_last)).total_seconds() > REFRESH_INTERVAL_HOURS * 3600:
+                needs_gov = True
+        except (ValueError, TypeError):
+            needs_gov = True
+    if needs_gov:
+        asyncio.create_task(refresh_governor())
 
     # FEC: refresh if no data or stale (daily)
     needs_fec = not _cache["fec"]
@@ -462,6 +524,101 @@ async def get_house_district_polls(district: str, limit: int = 50):
     return {"polls": all_polls[:limit]}
 
 
+# ---------------------------------------------------------------------------
+# Governor endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/governor/races")
+async def get_governor_races():
+    return [
+        {
+            "state": r["state"],
+            "state_abbr": r["state_abbr"],
+            "cycle": 2026,
+            "incumbent": r["incumbent_name"],
+            "incumbent_party": r["incumbent_party"],
+            "is_open": r["is_open"],
+            "cook_rating": r["cook_rating"],
+            "called": False,
+            "called_winner": None,
+        }
+        for r in GOVERNOR_RACES_2026
+    ]
+
+
+@app.get("/api/v1/governor/races/{state}/polls")
+async def get_governor_race_polls(state: str, limit: int = 200):
+    race_data = None
+    for r in GOVERNOR_RACES_2026:
+        if r["state"].lower() == state.lower() or r["state_abbr"].lower() == state.lower():
+            race_data = r
+            break
+
+    polls = _cache["governor_polls"].get(state, [])
+    if not polls and race_data:
+        polls = _cache["governor_polls"].get(race_data["state"], [])
+
+    api_polls = [
+        {
+            "id": hash(p["external_id"]) & 0x7FFFFFFF,
+            "pollster": p["pollster_name"],
+            "end_date": p.get("poll_date_end", ""),
+            "start_date": p.get("poll_date_start"),
+            "sample_size": p.get("sample_size"),
+            "population": p.get("population"),
+            "results": p.get("results", []),
+            "source": "wikipedia",
+            "poll_type": p.get("poll_type", "governor-race"),
+            "subject": p.get("subject"),
+        }
+        for p in polls[:limit]
+    ]
+
+    return {
+        "race": {
+            "state": race_data["state"] if race_data else state,
+            "state_abbr": race_data["state_abbr"] if race_data else state[:2].upper(),
+            "cycle": 2026,
+            "incumbent": race_data["incumbent_name"] if race_data else None,
+            "incumbent_party": race_data["incumbent_party"] if race_data else None,
+            "is_open": race_data["is_open"] if race_data else False,
+            "cook_rating": race_data["cook_rating"] if race_data else None,
+            "called": False,
+            "called_winner": None,
+        },
+        "polls": api_polls,
+        "count": len(api_polls),
+        "unique_count": len(polls),
+    }
+
+
+@app.get("/api/v1/governor/aggregates/all")
+async def get_all_governor_aggregates():
+    """Compute weighted polling aggregates per matchup for all Governor races."""
+    result = {}
+    for state, polls in _cache["governor_polls"].items():
+        if not polls:
+            continue
+        by_matchup: dict[str, list] = {}
+        for p in polls:
+            key = _matchup_key(p)
+            if key:
+                by_matchup.setdefault(key, []).append(p)
+
+        matchup_aggs = {}
+        for matchup_name, matchup_polls in by_matchup.items():
+            records = _polls_to_records(matchup_polls)
+            if not records:
+                continue
+            agg = aggregate_polls(records)
+            if agg["polls_included"] > 0:
+                matchup_aggs[matchup_name] = agg
+
+        if matchup_aggs:
+            result[state] = matchup_aggs
+    return result
+
+
 @app.get("/api/v1/polls/search")
 async def search_polls(days: int = 60, limit: int = 50):
     cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
@@ -494,6 +651,21 @@ async def search_polls(days: int = 60, limit: int = 50):
                     "population": p.get("population"),
                     "results": p.get("results", []),
                     "poll_type": "house-race",
+                    "subject": p.get("subject"),
+                })
+
+    for state, polls in _cache["governor_polls"].items():
+        for p in polls:
+            if p.get("poll_date_end", "") >= cutoff:
+                all_polls.append({
+                    "id": hash(p["external_id"]) & 0x7FFFFFFF,
+                    "pollster": p["pollster_name"],
+                    "state": state,
+                    "end_date": p.get("poll_date_end", ""),
+                    "sample_size": p.get("sample_size"),
+                    "population": p.get("population"),
+                    "results": p.get("results", []),
+                    "poll_type": "governor-race",
                     "subject": p.get("subject"),
                 })
 

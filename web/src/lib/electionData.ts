@@ -114,6 +114,31 @@ export interface SenateRace {
   primaryMatchups?: PrimaryMatchup[];
 }
 
+export interface GovernorRace {
+  state: string;
+  stateCode: string;
+  incumbent?: Party;
+  incumbentName?: string;
+  demCandidate: string;
+  repCandidate: string;
+  demPct: number;
+  repPct: number;
+  margin: number;
+  lean: Lean;
+  winner?: Party;
+  called: boolean;
+  pollingSamples: PollSample[];
+  pollCount: number;
+  key: boolean;
+  moneyRaised?: { dem: number; rep: number };
+  fecCandidates?: { name: string; party: string; receipts: number }[];
+  turnout?: number;
+  eventsThisWeek?: number;
+  latestPollDate?: string;
+  matchups: Matchup[];
+  primaryMatchups?: PrimaryMatchup[];
+}
+
 export interface HouseRace {
   district: string;
   state: string;
@@ -490,14 +515,25 @@ export function marginToLean(margin: number): Lean {
 export function cookToLean(cook: string | null | undefined): Lean {
   if (!cook) return "Toss-Up";
   const lower = cook.toLowerCase().replace(/[-–]/g, " ").trim();
-  if (/safe\s*d/.test(lower)) return "Safe D";
+  if (/(?:safe|solid)\s*d/.test(lower)) return "Safe D";
   if (/likely\s*d/.test(lower)) return "Likely D";
   if (/lean\s*d/.test(lower)) return "Lean D";
   if (/toss/.test(lower)) return "Toss-Up";
   if (/lean\s*r/.test(lower)) return "Lean R";
   if (/likely\s*r/.test(lower)) return "Likely R";
-  if (/safe\s*r/.test(lower)) return "Safe R";
+  if (/(?:safe|solid)\s*r/.test(lower)) return "Safe R";
   return "Toss-Up";
+}
+
+/** Convert a Cook rating to an approximate D-positive margin (midpoint of the threshold band). */
+export function cookToMargin(cook: string | null | undefined): number {
+  const lean = cookToLean(cook);
+  // Midpoints of RATING_THRESHOLDS bands: Safe >10 → 15, Likely 6-10 → 8, Lean 2.5-6 → 4.25, Toss-Up → 0
+  const margins: Record<string, number> = {
+    "Safe D": 15, "Likely D": 8, "Lean D": 4.25, "Toss-Up": 0,
+    "Lean R": -4.25, "Likely R": -8, "Safe R": -15,
+  };
+  return margins[lean] ?? 0;
 }
 
 function partyToIncumbent(p: string | null | undefined): Party | undefined {
@@ -574,10 +610,18 @@ export function transformSenateRace(
   let demPct = 0;
   let repPct = 0;
 
-  // Filter to polls with both a DEM and REP candidate
+  // Filter to polls with both a DEM and REP candidate (but not jungle primaries)
   const generalPolls = polls.filter((p) => {
-    const parties = new Set(p.results.map((r) => inferParty(r)));
-    return parties.has("DEM") && parties.has("REP");
+    const partyCount: Record<string, number> = {};
+    for (const r of p.results) {
+      const party = inferParty(r);
+      partyCount[party] = (partyCount[party] || 0) + 1;
+    }
+    // Must have both parties
+    if (!partyCount["DEM"] || !partyCount["REP"]) return false;
+    // Exclude jungle primaries: if either party has 3+ candidates, it's a primary field, not a GE matchup
+    if ((partyCount["DEM"] || 0) >= 3 || (partyCount["REP"] || 0) >= 3) return false;
+    return true;
   });
 
   // Group polls by matchup (DEM last name vs REP last name)
@@ -788,28 +832,50 @@ export function transformSenateRace(
   const winner = race.called_winner === "DEM" ? "D" : race.called_winner === "REP" ? "R" : undefined;
 
   // ---------------------------------------------------------------------------
-  // Primary polls: single-party polls (all candidates from same party)
+  // Primary polls: single-party polls OR jungle primaries (3+ candidates from one party)
   // ---------------------------------------------------------------------------
   const primaryPolls = polls.filter((p) => {
     // Exclude pre-2026 polls (hypothetical matchups before candidates declared)
     if (p.end_date && new Date(p.end_date).getFullYear() < 2026) return false;
-    const parties = new Set(p.results.filter((r) => r.pct > 0).map((r) => inferParty(r)));
-    // Must have at least 2 candidates from the same party, no cross-party
-    return parties.size === 1 && p.results.filter((r) => r.pct > 0).length >= 2
-      && (parties.has("DEM") || parties.has("REP"));
+    const candidatesWithPct = p.results.filter((r) => r.pct > 0);
+    if (candidatesWithPct.length < 2) return false;
+    const partyCount: Record<string, number> = {};
+    for (const r of candidatesWithPct) {
+      const party = inferParty(r);
+      partyCount[party] = (partyCount[party] || 0) + 1;
+    }
+    const parties = Object.keys(partyCount);
+    // Traditional primary: all candidates same party
+    if (parties.length === 1 && (partyCount["DEM"] || partyCount["REP"])) return true;
+    // Jungle/top-N primary: 3+ candidates from either party (treat each party as a primary)
+    if ((partyCount["DEM"] ?? 0) >= 3 || (partyCount["REP"] ?? 0) >= 3) return true;
+    return false;
   });
 
   let primaryMatchups: PrimaryMatchup[] | undefined;
   if (primaryPolls.length > 0) {
-    // Group by party only — one DEM primary, one REP primary
+    // Group by party — one DEM primary, one REP primary
+    // For jungle primaries, split the same poll into per-party virtual polls
     const primaryGroups: Record<string, { party: "DEM" | "REP"; polls: typeof primaryPolls }> = {};
     for (const p of primaryPolls) {
-      const candidates = p.results
-        .filter((r) => r.pct > 0)
-        .sort((a, b) => b.pct - a.pct);
-      const party = inferParty(candidates[0]) as "DEM" | "REP";
-      if (!primaryGroups[party]) primaryGroups[party] = { party, polls: [] };
-      primaryGroups[party].polls.push(p);
+      const candidatesWithPct = p.results.filter((r) => r.pct > 0);
+      const partyCounts: Record<string, number> = {};
+      for (const r of candidatesWithPct) {
+        const party = inferParty(r);
+        partyCounts[party] = (partyCounts[party] || 0) + 1;
+      }
+      // For each party with 2+ candidates, add to that party's group
+      for (const party of ["DEM", "REP"] as const) {
+        if ((partyCounts[party] ?? 0) >= 2) {
+          if (!primaryGroups[party]) primaryGroups[party] = { party, polls: [] };
+          // Create a virtual poll with only this party's candidates
+          const partyPoll = {
+            ...p,
+            results: p.results.filter((r) => inferParty(r) === party && r.pct > 0),
+          };
+          primaryGroups[party].polls.push(partyPoll as any);
+        }
+      }
     }
 
     primaryMatchups = Object.values(primaryGroups)
@@ -938,6 +1004,18 @@ export function transformSenateRace(
       })),
     }),
   };
+}
+
+export function transformGovernorRace(
+  race: ApiRace,
+  polls: ApiPoll[],
+  uniqueCount: number,
+  fecCandidates?: any[],
+  weightedAggregates?: Record<string, { results: { candidate: string; party: string; pct: number }[]; polls_included: number }>,
+): GovernorRace {
+  // Reuse the Senate transform — data shape is identical
+  const senateResult = transformSenateRace(race, polls, uniqueCount, fecCandidates, weightedAggregates);
+  return senateResult as unknown as GovernorRace;
 }
 
 export function transformHouseRace(

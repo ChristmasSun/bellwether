@@ -10,14 +10,18 @@ import {
 import {
   type SenateRace,
   type HouseRace,
+  type GovernorRace,
   type RecentPoll,
   type NewsItem,
   type PollEntry,
   STATE_NAMES,
   marginToLean,
+  cookToMargin,
+  BATTLEGROUND_MARGIN_THRESHOLD,
   apiGet,
   transformSenateRace,
   transformHouseRace,
+  transformGovernorRace,
   transformRecentPoll,
   transformRecentPollToPollEntry,
   generateTickerItems,
@@ -49,6 +53,7 @@ export interface GenericBallotAverage {
 interface ElectionData {
   senateRaces: SenateRace[];
   houseRaces: HouseRace[];
+  governorRaces: GovernorRace[];
   recentPolls: RecentPoll[];
   newsItems: NewsItem[];
   pollEntries: PollEntry[];
@@ -58,6 +63,7 @@ interface ElectionData {
   genericBallotAverage: GenericBallotAverage | null;
   totalSenatePolls: number;
   totalHousePolls: number;
+  totalGovernorPolls: number;
   loading: boolean;
   error: string | null;
   lastRefresh: Date | null;
@@ -67,6 +73,7 @@ interface ElectionData {
 const defaultCtx: ElectionData = {
   senateRaces: [],
   houseRaces: [],
+  governorRaces: [],
   recentPolls: [],
   newsItems: [],
   pollEntries: [],
@@ -79,6 +86,7 @@ const defaultCtx: ElectionData = {
   genericBallotAverage: null,
   totalSenatePolls: 0,
   totalHousePolls: 0,
+  totalGovernorPolls: 0,
   loading: true,
   error: null,
   lastRefresh: null,
@@ -98,21 +106,25 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
     setData((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
-      const [rawRaces, rawHouseDistricts, rawRecentPolls, rawFec, rawGBPolls, rawGBAvg, rawSenAggs, rawHouseAggs] = await Promise.all([
+      const [rawRaces, rawHouseDistricts, rawGovRaces, rawRecentPolls, rawFec, rawGBPolls, rawGBAvg, rawSenAggs, rawHouseAggs, rawGovAggs] = await Promise.all([
         apiGet<any[]>("/senate/races"),
         apiGet<any[]>("/house/races?limit=1000"),
+        apiGet<any[]>("/governor/races"),
         apiGet<{ polls: any[]; count: number }>("/polls/search?days=60&limit=500"),
         apiGet<Record<string, any[]>>("/fec").catch(() => ({} as Record<string, any[]>)),
         apiGet<{ polls: any[] }>("/generic-ballot/polls").catch(() => ({ polls: [] })),
         apiGet<{ average: any; poll_count: number }>("/generic-ballot/average").catch(() => ({ average: null, poll_count: 0 })),
         apiGet<Record<string, any>>("/senate/aggregates/all").catch(() => ({} as Record<string, any>)),
         apiGet<Record<string, any>>("/house/aggregates/all").catch(() => ({} as Record<string, any>)),
+        apiGet<Record<string, any>>("/governor/aggregates/all").catch(() => ({} as Record<string, any>)),
       ]);
       const senateAggregates: Record<string, any> = rawSenAggs ?? {};
       const houseAggregates: Record<string, any> = rawHouseAggs ?? {};
+      const governorAggregates: Record<string, any> = rawGovAggs ?? {};
 
       const races: any[] = Array.isArray(rawRaces) ? rawRaces : [];
       const houseDistricts: any[] = Array.isArray(rawHouseDistricts) ? rawHouseDistricts : [];
+      const govRaces: any[] = Array.isArray(rawGovRaces) ? rawGovRaces : [];
 
       const BATCH = 8;
       const senateRaces: SenateRace[] = [];
@@ -166,6 +178,33 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
         );
         for (const r of results) {
           if (r.status === "fulfilled") houseRaces.push(r.value);
+        }
+      }
+
+      // Governor races
+      const governorRaces: GovernorRace[] = [];
+      for (let i = 0; i < govRaces.length; i += BATCH) {
+        const batch = govRaces.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          batch.map(async (race: any) => {
+            try {
+              const pollData = await apiGet<{ polls: any[]; unique_count?: number }>(
+                `/governor/races/${encodeURIComponent(race.state)}/polls?limit=200`
+              );
+              return transformGovernorRace(
+                race,
+                pollData.polls || [],
+                pollData.unique_count ?? (pollData.polls || []).length,
+                undefined,
+                governorAggregates[race.state],
+              );
+            } catch {
+              return transformGovernorRace(race, [], 0, undefined, governorAggregates[race.state]);
+            }
+          })
+        );
+        for (const r of results) {
+          if (r.status === "fulfilled") governorRaces.push(r.value);
         }
       }
 
@@ -244,6 +283,35 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
         r.lean = marginToLean(r.projectedMargin);
       }
 
+      // Governor races: blend polling margin with Cook prior + national environment
+      // Similar to House: Cook rating provides the baseline, generic ballot shifts it
+      const govEnv = genericBallotAverage?.margin ?? HOUSE_NATIONAL_ENVIRONMENT;
+      const govRecentCutoff = new Date();
+      govRecentCutoff.setDate(govRecentCutoff.getDate() - RECENT_POLL_DAYS);
+      const govCookMap = Object.fromEntries(govRaces.map((r: any) => [r.state_abbr, r.cook_rating]));
+      for (const r of governorRaces) {
+        const cookPrior = cookToMargin(govCookMap[r.stateCode]);
+        // Shift Cook prior by half the national environment (governors less correlated than House)
+        const prior = cookPrior + govEnv * 0.5;
+
+        if (r.demPct > 0 && r.repPct > 0) {
+          // Has polling — blend with prior based on recent poll count
+          const recentCount = r.pollingSamples.filter((s) => {
+            try {
+              const d = new Date(s.date + ", " + new Date().getFullYear());
+              return !isNaN(d.getTime()) && d >= govRecentCutoff;
+            } catch { return false; }
+          }).length;
+          const blend = Math.min(recentCount / POLLS_FOR_FULL_WEIGHT, 1);
+          r.margin = Math.round((blend * r.margin + (1 - blend) * prior) * 10) / 10;
+        } else {
+          // No polling — use Cook prior + environment
+          r.margin = Math.round(prior * 10) / 10;
+        }
+        r.lean = marginToLean(r.margin);
+        r.key = Math.abs(r.margin) <= BATTLEGROUND_MARGIN_THRESHOLD;
+      }
+
       const recentPolls = (rawRecentPolls.polls || []).map(transformRecentPoll);
       const pollEntries: PollEntry[] = recentPolls
         .map(transformRecentPollToPollEntry)
@@ -257,10 +325,12 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
         (s: number, d: any) => s + (d.poll_count || 0),
         0,
       );
+      const totalGovernorPolls = governorRaces.reduce((s, r) => s + r.pollCount, 0);
 
       setData({
         senateRaces,
         houseRaces,
+        governorRaces,
         recentPolls,
         newsItems,
         pollEntries,
@@ -270,6 +340,7 @@ export function ElectionDataProvider({ children }: { children: ReactNode }) {
         genericBallotAverage,
         totalSenatePolls,
         totalHousePolls,
+        totalGovernorPolls,
         loading: false,
         error: null,
         lastRefresh: new Date(),

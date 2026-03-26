@@ -15,6 +15,16 @@ export const SEN_D_BASE = 34;
 export const SEN_R_BASE = 31;
 
 // ---------------------------------------------------------------------------
+// Governor seat baseline (non-contested seats)
+// ---------------------------------------------------------------------------
+
+/** Dem governors NOT up for election in 2026: DE, KY, NJ, NC, VA, WA */
+export const GOV_D_BASE = 6;
+
+/** Rep governors NOT up for election in 2026: IN, LA, MS, MO, MT, ND, UT, WV */
+export const GOV_R_BASE = 8;
+
+// ---------------------------------------------------------------------------
 // Battleground & matchup thresholds
 // ---------------------------------------------------------------------------
 

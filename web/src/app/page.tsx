@@ -1,16 +1,17 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { ElectionDataProvider, useElectionData } from "@/lib/ElectionDataContext";
-import { type SenateRace, type HouseRace, type Matchup, type PrimaryMatchup, type PrimaryPollSample, STATE_NAMES, BATTLEGROUND_MARGIN_THRESHOLD, STATE_ELECTION_HISTORY, MATCHUP_MIN_POLLS, type StateElectionResult } from "@/lib/electionData";
-import { SEN_D_BASE, SEN_R_BASE, TREND_MIN_SHIFT, TREND_MIN_POLLS, TREND_WINDOW, INDEPENDENT_CANDIDATES, IND_COLOR } from "@/lib/constants";
+import { type SenateRace, type HouseRace, type GovernorRace, type Matchup, type PrimaryMatchup, type PrimaryPollSample, STATE_NAMES, BATTLEGROUND_MARGIN_THRESHOLD, STATE_ELECTION_HISTORY, MATCHUP_MIN_POLLS, type StateElectionResult } from "@/lib/electionData";
+import { SEN_D_BASE, SEN_R_BASE, GOV_D_BASE, GOV_R_BASE, TREND_MIN_SHIFT, TREND_MIN_POLLS, TREND_WINDOW, INDEPENDENT_CANDIDATES, IND_COLOR } from "@/lib/constants";
 import { DISTRICT_PRES_2024 } from "@/lib/districtPres2024";
 import { DISTRICT_HOUSE_2024 } from "@/lib/districtHouse2024";
 import { RefreshCw, ArrowLeft } from "lucide-react";
 import { LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from "recharts";
 import dynamic from "next/dynamic";
 const SenateMap = dynamic(() => import("@/components/elections/USAMap").then(m => ({ default: m.SenateMap })), { ssr: false });
+const GovernorMap = dynamic(() => import("@/components/elections/GovernorMap").then(m => ({ default: m.GovernorMap })), { ssr: false });
 
-type Tab = "SENATE" | "HOUSE" | "NATIONAL";
+type Tab = "SENATE" | "HOUSE" | "GOVERNOR" | "NATIONAL";
 
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(false);
@@ -52,7 +53,7 @@ function marginColor(margin: number): string {
  * Polling trend: compares the average margin of the last 3 polls vs the prior 3.
  * Positive shift = moving toward D, negative = moving toward R.
  */
-function pollTrend(race: SenateRace): { shift: number; label: string; color: string } | null {
+function pollTrend(race: SenateRace | GovernorRace): { shift: number; label: string; color: string } | null {
   const samples = race.pollingSamples;
   if (samples.length < TREND_MIN_POLLS) return null;
   const recent = samples.slice(-TREND_WINDOW);
@@ -476,7 +477,7 @@ function AllStatesGrid({ senateRaces, tab, onSelect }: { senateRaces: SenateRace
 // Race Detail View (matches Paper design)
 // ---------------------------------------------------------------------------
 
-function RaceDetailView({ race, onBack, lastRefresh, mobile }: { race: SenateRace; onBack: () => void; lastRefresh: Date | null; mobile?: boolean }) {
+function RaceDetailView({ race, onBack, lastRefresh, mobile, raceType = "Senate" }: { race: SenateRace; onBack: () => void; lastRefresh: Date | null; mobile?: boolean; raceType?: "Senate" | "Governor" }) {
   const [matchupIdx, setMatchupIdx] = useState(0);
   const hasMultipleMatchups = race.matchups.length > 1;
   const [primaryIdx, setPrimaryIdx] = useState(0);
@@ -555,9 +556,9 @@ function RaceDetailView({ race, onBack, lastRefresh, mobile }: { race: SenateRac
           {/* Hero */}
           <div className="flex flex-col gap-2" style={{ marginBottom: mobile ? 20 : 32 }}>
             <div className="flex items-center gap-2 flex-wrap">
-              <span style={{ fontFamily: mono, fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>2026 Senate Race</span>
-              <span style={{ color: "var(--text-faint)" }}>·</span>
-              <span style={{ fontFamily: mono, fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>Class II</span>
+              <span style={{ fontFamily: mono, fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>2026 {raceType} Race</span>
+              {raceType === "Senate" && (<><span style={{ color: "var(--text-faint)" }}>·</span>
+              <span style={{ fontFamily: mono, fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>Class II</span></>)}
               <span style={{ color: "var(--text-faint)" }}>·</span>
               <span style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: race.incumbent === "D" ? "var(--dem)" : race.incumbent === "R" ? "var(--rep)" : "var(--text-muted)" }}>
                 {race.incumbent ? `${race.incumbent} Incumbent` : "Open Seat"}
@@ -634,7 +635,7 @@ function RaceDetailView({ race, onBack, lastRefresh, mobile }: { race: SenateRac
               {isIndependent(active.demCandidate) ? (
                 <span style={{ fontSize: 12, color: IND_COLOR }}>{isIndependent(active.demCandidate)!.note}</span>
               ) : race.incumbent === "D" && race.incumbentName && !race.called && race.incumbentName.toLowerCase().includes(active.demCandidate.toLowerCase()) ? (
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Incumbent U.S. Senator</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Incumbent {raceType === "Governor" ? "Governor" : "U.S. Senator"}</span>
               ) : null}
             </div>
             {!mobile && (
@@ -655,7 +656,7 @@ function RaceDetailView({ race, onBack, lastRefresh, mobile }: { race: SenateRac
               </div>
               <span style={{ fontFamily: serif, fontSize: mobile ? 24 : 32, color: "var(--text-primary)" }}>{active.repCandidate || "TBD"}</span>
               {race.incumbent === "R" && race.incumbentName && race.incumbentName.toLowerCase().includes(active.repCandidate.toLowerCase()) && (
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Incumbent U.S. Senator</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Incumbent {raceType === "Governor" ? "Governor" : "U.S. Senator"}</span>
               )}
             </div>
           </div>
@@ -722,7 +723,7 @@ function RaceDetailView({ race, onBack, lastRefresh, mobile }: { race: SenateRac
               <div className="flex flex-col" style={{ marginTop: 16 }}>
                 {[
                   ["Rating", active.lean],
-                  ["Seat Class", "Class II"],
+                  ...(raceType === "Senate" ? [["Seat Class", "Class II"]] : []),
                   ...(race.incumbentName ? [["Incumbent", `${race.incumbentName} (${race.incumbent})`]] : [["Status", "Open seat"]]),
                   ["Polls This Matchup", String(active.pollCount)],
                   ...(active.latestPollDate ? [["Latest Poll", active.latestPollDate]] : []),
@@ -1552,15 +1553,16 @@ function AboutView({ onBack, mobile }: { onBack: () => void; mobile?: boolean })
 
 function DashboardContent() {
   const {
-    senateRaces, houseRaces, recentPolls, seatBalance,
+    senateRaces, houseRaces, governorRaces, recentPolls, seatBalance,
     genericBallotPolls, genericBallotAverage,
-    totalSenatePolls, totalHousePolls,
+    totalSenatePolls, totalHousePolls, totalGovernorPolls,
     loading, error, lastRefresh, refetch,
   } = useElectionData();
 
   const [tab, setTab] = useState<Tab>("SENATE");
   const [selectedRaceCode, setSelectedRaceCode] = useState<string | null>(null);
   const [selectedHouseDistrict, setSelectedHouseDistrict] = useState<string | null>(null);
+  const [selectedGovernorCode, setSelectedGovernorCode] = useState<string | null>(null);
   const [showAbout, setShowAbout] = useState(false);
   const [showAllRaces, setShowAllRaces] = useState(false);
   type SortMode = "alpha" | "margin" | "pres24" | "polls" | "trend";
@@ -1590,6 +1592,11 @@ function DashboardContent() {
     return <HouseDetailView race={selectedHouse} onBack={() => setSelectedHouseDistrict(null)} lastRefresh={lastRefresh} mobile={mobile} />;
   }
 
+  const selectedGovernor = selectedGovernorCode ? governorRaces.find((r) => r.stateCode === selectedGovernorCode) : null;
+  if (selectedGovernor) {
+    return <RaceDetailView race={selectedGovernor as any} onBack={() => setSelectedGovernorCode(null)} lastRefresh={lastRefresh} mobile={mobile} raceType="Governor" />;
+  }
+
   // Compute seat projections
   const { demProjected: sDem, repProjected: sRep, tossUp: sToss } = seatBalance.senate;
   const senDTotal = SEN_D_BASE + sDem;
@@ -1601,14 +1608,24 @@ function DashboardContent() {
   const battlegrounds = senateRaces.filter((r) => r.key).length;
   const totalPolls = totalSenatePolls + totalHousePolls;
 
+  // Governor projections
+  const govBattlegrounds = governorRaces.filter((r) => r.key).length;
+  const govDemUp = governorRaces.filter((r) => r.lean.includes("D")).length;
+  const govRepUp = governorRaces.filter((r) => r.lean.includes("R")).length;
+  const govToss = governorRaces.filter((r) => r.lean === "Toss-Up").length;
+  const govDTotal = GOV_D_BASE + govDemUp;
+  const govRTotal = GOV_R_BASE + govRepUp;
+
   const sidebarPolls = recentPolls
     .filter((p) => {
-      // Filter by active tab — exclude generic ballot from Senate/House sidebar
+      // Filter by active tab — exclude generic ballot from Senate/House/Governor sidebar
       const isHouse = p.pollType?.toLowerCase().includes("house");
+      const isGovernor = p.pollType?.toLowerCase().includes("governor");
       const isGenericBallot = p.pollType?.toLowerCase().includes("generic");
       if (isGenericBallot) return false;
       if (tab === "HOUSE" && !isHouse) return false;
-      if (tab === "SENATE" && isHouse) return false;
+      if (tab === "SENATE" && (isHouse || isGovernor)) return false;
+      if (tab === "GOVERNOR" && !isGovernor) return false;
       // Only show polls with both a named DEM and REP candidate with real percentages
       const dem = p.results.find((r) => r.party === "DEM" || r.party === "D");
       const rep = p.results.find((r) => r.party === "REP" || r.party === "R");
@@ -1706,6 +1723,56 @@ function DashboardContent() {
     return Math.abs(a.projectedMargin) - Math.abs(b.projectedMargin);
   });
 
+  // Governor sorted list
+  const sortedGovernor = showAllRaces
+    ? [...governorRaces].sort((a, b) => {
+        if (sortMode === "margin") {
+          const aHas = a.demPct > 0 && a.repPct > 0;
+          const bHas = b.demPct > 0 && b.repPct > 0;
+          if (aHas && !bHas) return -1;
+          if (!aHas && bHas) return 1;
+          return Math.abs(a.margin) - Math.abs(b.margin);
+        }
+        if (sortMode === "pres24") {
+          const aP = STATE_ELECTION_HISTORY[a.stateCode]?.find(h => h.label === "2024 PRES");
+          const bP = STATE_ELECTION_HISTORY[b.stateCode]?.find(h => h.label === "2024 PRES");
+          if (aP && !bP) return -1;
+          if (!aP && bP) return 1;
+          if (aP && bP) return Math.abs(aP.margin) - Math.abs(bP.margin);
+          return 0;
+        }
+        if (sortMode === "polls") return b.pollCount - a.pollCount;
+        if (sortMode === "trend") {
+          const aT = pollTrend(a);
+          const bT = pollTrend(b);
+          if (aT && !bT) return -1;
+          if (!aT && bT) return 1;
+          if (aT && bT) return Math.abs(bT.shift) - Math.abs(aT.shift);
+          return 0;
+        }
+        return a.state.localeCompare(b.state);
+      })
+    : governorRaces.filter((r) => r.key).sort((a, b) => {
+        if (sortMode === "pres24") {
+          const aP = STATE_ELECTION_HISTORY[a.stateCode]?.find(h => h.label === "2024 PRES");
+          const bP = STATE_ELECTION_HISTORY[b.stateCode]?.find(h => h.label === "2024 PRES");
+          if (aP && !bP) return -1;
+          if (!aP && bP) return 1;
+          if (aP && bP) return Math.abs(aP.margin) - Math.abs(bP.margin);
+          return 0;
+        }
+        if (sortMode === "polls") return b.pollCount - a.pollCount;
+        if (sortMode === "trend") {
+          const aT = pollTrend(a);
+          const bT = pollTrend(b);
+          if (aT && !bT) return -1;
+          if (!aT && bT) return 1;
+          if (aT && bT) return Math.abs(bT.shift) - Math.abs(aT.shift);
+          return 0;
+        }
+        return Math.abs(a.margin) - Math.abs(b.margin);
+      });
+
   // --- National tab: Generic Ballot view ---
   if (tab === "NATIONAL") {
     const gbAvg = genericBallotAverage;
@@ -1742,9 +1809,9 @@ function DashboardContent() {
             {!mobile && <span style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>2026 Midterms</span>}
           </div>
           <nav className="flex items-center gap-4 ml-auto">
-            {(["SENATE", "HOUSE", "NATIONAL"] as Tab[]).map((t) => (
+            {(["SENATE", "HOUSE", "GOVERNOR", "NATIONAL"] as Tab[]).map((t) => (
               <button key={t} onClick={() => { setTab(t); setShowAllRaces(false); setSortMode("alpha"); }} style={{ fontSize: 13, fontWeight: tab === t ? 500 : 400, color: tab === t ? "var(--text-primary)" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", borderBottom: tab === t ? "2px solid var(--text-primary)" : "2px solid transparent", paddingBottom: 2 }}>
-                {t === "SENATE" ? "Senate" : t === "HOUSE" ? "House" : "National"}
+                {t === "SENATE" ? "Senate" : t === "HOUSE" ? "House" : t === "GOVERNOR" ? "Governor" : "National"}
               </button>
             ))}
             <button onClick={() => setShowAbout(true)} style={{ fontSize: 13, fontWeight: 400, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", borderBottom: "2px solid transparent", paddingBottom: 2 }}>About</button>
@@ -1910,9 +1977,9 @@ function DashboardContent() {
           {!mobile && <span style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const }}>2026 Midterms</span>}
         </div>
         <nav className="flex items-center gap-4 ml-auto">
-          {(["SENATE", "HOUSE", "NATIONAL"] as Tab[]).map((t) => (
+          {(["SENATE", "HOUSE", "GOVERNOR", "NATIONAL"] as Tab[]).map((t) => (
             <button key={t} onClick={() => { setTab(t); setShowAllRaces(false); setSortMode("alpha"); }} style={{ fontSize: 13, fontWeight: tab === t ? 500 : 400, color: tab === t ? "var(--text-primary)" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", borderBottom: tab === t ? "2px solid var(--text-primary)" : "2px solid transparent", paddingBottom: 2 }}>
-              {t === "SENATE" ? "Senate" : t === "HOUSE" ? "House" : "National"}
+              {t === "SENATE" ? "Senate" : t === "HOUSE" ? "House" : t === "GOVERNOR" ? "Governor" : "National"}
             </button>
           ))}
           <button onClick={() => setShowAbout(true)} style={{ fontSize: 13, fontWeight: 400, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", borderBottom: "2px solid transparent", paddingBottom: 2 }}>About</button>
@@ -1924,7 +1991,7 @@ function DashboardContent() {
         {/* Left — Projection */}
         <div className="flex flex-col gap-2" style={mobile ? {} : { width: 340, flexShrink: 0 }}>
           <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
-            {tab === "SENATE" ? "Projected Senate Balance" : "Projected House Balance"}
+            {tab === "SENATE" ? "Projected Senate Balance" : tab === "GOVERNOR" ? "Projected Governor Balance" : "Projected House Balance"}
           </span>
           {tab === "SENATE" ? (
             <>
@@ -1961,6 +2028,48 @@ function DashboardContent() {
                   { val: senateRaces.length, label: "Races", color: "var(--text-primary)" },
                   { val: battlegrounds, label: "Battlegrounds", color: "var(--accent)" },
                   { val: totalPolls, label: "Total Polls", color: "var(--text-primary)" },
+                ].map((s) => (
+                  <div key={s.label} className="flex flex-col gap-0">
+                    <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 500, color: s.color, letterSpacing: "-0.02em" }}>{s.val}</span>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{s.label}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : tab === "GOVERNOR" ? (
+            <>
+              <div className="flex items-baseline gap-3">
+                <div className="flex items-baseline gap-1">
+                  <span style={{ fontFamily: serif, fontSize: mobile ? 40 : 52, color: "var(--dem)", letterSpacing: "-0.03em", lineHeight: mobile ? "40px" : "52px" }}>{govDTotal}</span>
+                  <span style={{ fontSize: 13, color: "var(--dem)" }}>Dem</span>
+                </div>
+                <span style={{ fontSize: 13, color: "var(--text-faint)" }}>—</span>
+                <div className="flex items-baseline gap-1">
+                  <span style={{ fontFamily: serif, fontSize: mobile ? 40 : 52, color: "var(--rep)", letterSpacing: "-0.03em", lineHeight: mobile ? "40px" : "52px" }}>{govRTotal}</span>
+                  <span style={{ fontSize: 13, color: "var(--rep)" }}>Rep</span>
+                </div>
+              </div>
+              {(() => {
+                const total = govDTotal + govRTotal;
+                return (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex overflow-hidden" style={{ height: 10, borderRadius: 5 }}>
+                      <div style={{ width: `${total > 0 ? (govDTotal / total) * 100 : 50}%`, background: "var(--dem)" }} />
+                      <div style={{ flex: 1, background: "var(--rep)" }} />
+                    </div>
+                    <div className="flex justify-between">
+                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--dem)" }}>{govDTotal} projected</span>
+                      {govToss > 0 && <span style={{ fontFamily: mono, fontSize: 10, color: "var(--text-muted)" }}>{govToss} toss-up</span>}
+                      <span style={{ fontFamily: mono, fontSize: 10, color: "var(--rep)" }}>{govRTotal} projected</span>
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="flex gap-4" style={{ marginTop: 4 }}>
+                {[
+                  { val: governorRaces.length, label: "Races", color: "var(--text-primary)" },
+                  { val: govBattlegrounds, label: "Battlegrounds", color: "var(--accent)" },
+                  { val: totalGovernorPolls, label: "Total Polls", color: "var(--text-primary)" },
                 ].map((s) => (
                   <div key={s.label} className="flex flex-col gap-0">
                     <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 500, color: s.color, letterSpacing: "-0.02em" }}>{s.val}</span>
@@ -2019,10 +2128,15 @@ function DashboardContent() {
           )}
         </div>
 
-        {/* Center — Map (Senate only, hidden on mobile) */}
+        {/* Center — Map (Senate/Governor, hidden on mobile) */}
         {tab === "SENATE" && !mobile && (
           <div className="flex flex-col flex-1 min-w-0">
             <SenateMap senateRaces={senateRaces} onStateClick={setSelectedRaceCode} />
+          </div>
+        )}
+        {tab === "GOVERNOR" && !mobile && (
+          <div className="flex flex-col flex-1 min-w-0">
+            <GovernorMap governorRaces={governorRaces} onStateClick={setSelectedGovernorCode} />
           </div>
         )}
 
@@ -2072,6 +2186,53 @@ function DashboardContent() {
             })()}
           </div>
         )}
+        {/* Right — Governor composition bar */}
+        {tab === "GOVERNOR" && (
+          <div className="flex flex-col gap-2 justify-center" style={mobile ? {} : { width: 280, flexShrink: 0 }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
+              Governor Composition
+            </span>
+            {(() => {
+              const dSafe = GOV_D_BASE;
+              const dUp = governorRaces.filter((r) => r.lean.includes("D") || r.lean === "Toss-Up" && r.incumbent === "D").length;
+              const rUp = governorRaces.filter((r) => r.lean.includes("R") || r.lean === "Toss-Up" && r.incumbent === "R").length;
+              const rSafe = GOV_R_BASE;
+              const total = dSafe + dUp + rUp + rSafe;
+              return (
+                <>
+                  <div className="flex overflow-hidden" style={{ height: mobile ? 16 : 24, borderRadius: 5 }}>
+                    <div style={{ width: `${(dSafe / total) * 100}%`, background: "var(--dem)" }} title={`${dSafe} Dem govs not up`} />
+                    <div style={{ width: `${(dUp / total) * 100}%`, background: "var(--dem-light)", borderLeft: "1px solid var(--bg)" }} title={`${dUp} Dem govs up`} />
+                    <div style={{ width: `${(rUp / total) * 100}%`, background: "var(--rep-light)", borderLeft: "1px solid var(--bg)" }} title={`${rUp} Rep govs up`} />
+                    <div style={{ width: `${(rSafe / total) * 100}%`, background: "var(--rep)", borderLeft: "1px solid var(--bg)" }} title={`${rSafe} Rep govs not up`} />
+                  </div>
+                  <div className="flex justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <div style={{ width: 7, height: 7, borderRadius: 2, background: "var(--dem)" }} />
+                        <span style={{ fontFamily: mono, fontSize: 9, color: "var(--text-muted)" }}>{dSafe} safe</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div style={{ width: 7, height: 7, borderRadius: 2, background: "var(--dem-light)" }} />
+                        <span style={{ fontFamily: mono, fontSize: 9, color: "var(--text-muted)" }}>{dUp} up</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <div style={{ width: 7, height: 7, borderRadius: 2, background: "var(--rep-light)" }} />
+                        <span style={{ fontFamily: mono, fontSize: 9, color: "var(--text-muted)" }}>{rUp} up</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div style={{ width: 7, height: 7, borderRadius: 2, background: "var(--rep)" }} />
+                        <span style={{ fontFamily: mono, fontSize: 9, color: "var(--text-muted)" }}>{rSafe} safe</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       {/* Main content */}
@@ -2080,25 +2241,16 @@ function DashboardContent() {
           {/* Column headers — hidden on mobile */}
           {!mobile && (
             <div className="flex items-center px-10 shrink-0" style={{ height: 40, borderBottom: "1px solid var(--border)" }}>
-              {tab === "SENATE" ? (
-                <div style={{ width: 160, flexShrink: 0 }}>
-                  <span
-                    onClick={() => { setShowAllRaces(!showAllRaces); setSortMode("alpha"); }}
-                    style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, cursor: "pointer", borderBottom: "1px dashed var(--text-faint)", paddingBottom: 1 }}
-                  >
-                    {showAllRaces ? "All Races" : "Battleground Races"}
-                  </span>
-                </div>
-              ) : (
-                <div style={{ width: 160, flexShrink: 0 }}>
-                  <span
-                    onClick={() => { setShowAllRaces(!showAllRaces); setSortMode("alpha"); }}
-                    style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, cursor: "pointer", borderBottom: "1px dashed var(--text-faint)", paddingBottom: 1 }}
-                  >
-                    {showAllRaces ? "All Districts" : "Competitive Districts"}
-                  </span>
-                </div>
-              )}
+              <div style={{ width: 160, flexShrink: 0 }}>
+                <span
+                  onClick={() => { setShowAllRaces(!showAllRaces); setSortMode("alpha"); }}
+                  style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" as const, cursor: "pointer", borderBottom: "1px dashed var(--text-faint)", paddingBottom: 1 }}
+                >
+                  {tab === "HOUSE"
+                    ? (showAllRaces ? "All Districts" : "Competitive Districts")
+                    : (showAllRaces ? "All Races" : "Battleground Races")}
+                </span>
+              </div>
               <span style={{ fontSize: 11, color: "var(--text-faint)", width: 90, flexShrink: 0 }}>Rating</span>
               <span style={{ fontSize: 11, color: "var(--text-faint)", width: 140, flexShrink: 0 }}>Democrat</span>
               <span style={{ fontSize: 11, color: "var(--text-faint)", width: 140, flexShrink: 0 }}>Republican</span>
@@ -2106,7 +2258,7 @@ function DashboardContent() {
                 onClick={() => setSortMode(sortMode === "pres24" ? "alpha" : "pres24")}
                 style={{ fontSize: 11, color: "var(--text-faint)", width: 75, flexShrink: 0, textAlign: "center" as const, cursor: "pointer", borderBottom: sortMode === "pres24" ? "1px solid var(--text-muted)" : "none" }}
               >'24 Pres{sortMode === "pres24" ? " ↓" : ""}</span>
-              {tab === "SENATE" && <TrendHeader active={sortMode === "trend"} onClick={() => setSortMode(sortMode === "trend" ? "alpha" : "trend")} />}
+              {(tab === "SENATE" || tab === "GOVERNOR") && <TrendHeader active={sortMode === "trend"} onClick={() => setSortMode(sortMode === "trend" ? "alpha" : "trend")} />}
               <span
                 onClick={() => setSortMode(sortMode === "polls" ? "alpha" : "polls")}
                 style={{ fontSize: 11, color: "var(--text-faint)", width: 55, flexShrink: 0, textAlign: "center" as const, cursor: "pointer", borderBottom: sortMode === "polls" ? "1px solid var(--text-muted)" : "none" }}
@@ -2122,29 +2274,24 @@ function DashboardContent() {
           {/* Mobile sub-header */}
           {mobile && (
             <div className="flex items-center justify-between px-4 shrink-0" style={{ height: 40, borderBottom: "1px solid var(--border)" }}>
-              {tab === "SENATE" ? (
-                <span
-                  onClick={() => { setShowAllRaces(!showAllRaces); setSortMode("alpha"); }}
-                  style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", cursor: "pointer", borderBottom: "1px dashed var(--text-faint)", paddingBottom: 1 }}
-                >
-                  {showAllRaces ? "All Races" : "Battleground Races"}
-                </span>
-              ) : (
-                <span
-                  onClick={() => { setShowAllRaces(!showAllRaces); setSortMode("alpha"); }}
-                  style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", cursor: "pointer", borderBottom: "1px dashed var(--text-faint)", paddingBottom: 1 }}
-                >
-                  {showAllRaces ? "All Districts" : "Competitive Districts"}
-                </span>
-              )}
+              <span
+                onClick={() => { setShowAllRaces(!showAllRaces); setSortMode("alpha"); }}
+                style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", cursor: "pointer", borderBottom: "1px dashed var(--text-faint)", paddingBottom: 1 }}
+              >
+                {tab === "HOUSE"
+                  ? (showAllRaces ? "All Districts" : "Competitive Districts")
+                  : (showAllRaces ? "All Races" : "Battleground Races")}
+              </span>
               <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
-                {tab === "SENATE" ? sortedSenate.length : sortedHouse.length} races
+                {tab === "SENATE" ? sortedSenate.length : tab === "GOVERNOR" ? sortedGovernor.length : sortedHouse.length} races
               </span>
             </div>
           )}
           <div className={mobile ? "" : "flex-1 overflow-y-auto hide-scrollbar"}>
             {tab === "SENATE"
               ? sortedSenate.map((race) => <SenateRaceRow key={race.stateCode} race={race} onClick={() => setSelectedRaceCode(race.stateCode)} mobile={mobile} />)
+              : tab === "GOVERNOR"
+              ? sortedGovernor.map((race) => <SenateRaceRow key={race.stateCode} race={race as any} onClick={() => setSelectedGovernorCode(race.stateCode)} mobile={mobile} />)
               : sortedHouse.map((race) => <HouseRaceRow key={race.district} race={race} mobile={mobile} onClick={() => setSelectedHouseDistrict(race.district)} />)
             }
           </div>
@@ -2161,6 +2308,8 @@ function DashboardContent() {
                     <RecentPollCard poll={poll} onClick={() => {
                       if (poll.district) {
                         setSelectedHouseDistrict(poll.district);
+                      } else if (tab === "GOVERNOR") {
+                        setSelectedGovernorCode(poll.stateCode);
                       } else {
                         setSelectedRaceCode(poll.stateCode);
                       }
