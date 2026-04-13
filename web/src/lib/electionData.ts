@@ -684,9 +684,12 @@ export function transformSenateRace(
 
     const margin = Math.round((dPct - rPct) * 10) / 10;
 
-    const samples: PollSample[] = group
+    const sortedGroup = group
       .filter((p) => p.end_date)
-      .reverse()
+      .slice()
+      .sort((a, b) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime());
+
+    const samples: PollSample[] = sortedGroup
       .map((p) => {
         const d = p.results.find((r) => inferParty(r) === "DEM");
         const r = p.results.find((r2) => inferParty(r2) === "REP");
@@ -714,8 +717,8 @@ export function transformSenateRace(
       lean: (dPct > 0 && rPct > 0) ? marginToLean(dPct - rPct) : cookToLean(race.cook_rating),
       pollingSamples: samples,
       pollCount: group.length,
-      latestPollDate: group[0]?.end_date
-        ? new Date(group[0].end_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      latestPollDate: sortedGroup[sortedGroup.length - 1]?.end_date
+        ? new Date(sortedGroup[sortedGroup.length - 1].end_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
         : undefined,
     };
   }
@@ -1032,10 +1035,13 @@ export function transformHouseRace(
   let repPct = 0;
   let lean: Lean = "Toss-Up";
 
-  const generalPolls = polls.filter((p) => {
-    const parties = new Set(p.results.map((r) => inferParty(r)));
-    return parties.has("DEM") && parties.has("REP");
-  });
+  const generalPolls = polls
+    .filter((p) => {
+      const parties = new Set(p.results.map((r) => inferParty(r)));
+      return parties.has("DEM") && parties.has("REP");
+    })
+    .slice()
+    .sort((a, b) => new Date(b.end_date).getTime() - new Date(a.end_date).getTime());
 
   const pollingSamples: PollSample[] = [];
   let latestPollDate: string | undefined;
